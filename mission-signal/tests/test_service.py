@@ -31,7 +31,7 @@ def create(client, **changes):
 
 
 def test_health_and_no_docs(client):
-    assert client.get('/health').json() == {'status': 'ok', 'version': '0.1.0'}
+    assert client.get('/health').json() == {'status': 'ok', 'version': '0.2.0'}
     assert client.get('/docs').status_code == 404
 
 
@@ -89,3 +89,24 @@ def test_no_capabilities_in_public_response(client):
     body, _, response = create(client)
     assert set(response) == {'id', 'conversation_id', 'state', 'created_at', 'completed_at'}
     assert body['read_token'] not in json.dumps(response)
+
+
+def test_cancel_authenticated_idempotent_and_terminal(client):
+    body, _, _ = create(client)
+    url = '/v1/missions/' + body['id']
+    read = {'Authorization': 'Bearer ' + body['read_token']}
+    assert client.post(url + '/cancel').status_code == 401
+    first = client.post(url + '/cancel', headers=read)
+    assert first.status_code == 200 and first.json()['state'] == 'CANCELLED'
+    assert client.post(url + '/cancel', headers=read).json() == first.json()
+    assert client.get(url, headers=read).json()['state'] == 'CANCELLED'
+    secret = json.loads((service.DATA / 'credentials' / (body['id'] + '.json')).read_text())['token']
+    assert client.post(url + '/complete', headers={'Authorization': 'Bearer ' + secret}).json()['state'] == 'CANCELLED'
+
+
+def test_complete_then_cancel_keeps_completion(client):
+    body, _, _ = create(client)
+    url = '/v1/missions/' + body['id']
+    completion = json.loads((service.DATA / 'credentials' / (body['id'] + '.json')).read_text())['token']
+    assert client.post(url + '/complete', headers={'Authorization': 'Bearer ' + completion}).json()['state'] == 'COMPLETED'
+    assert client.post(url + '/cancel', headers={'Authorization': 'Bearer ' + body['read_token']}).json()['state'] == 'COMPLETED'
