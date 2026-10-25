@@ -42,14 +42,19 @@ async function sessionStatus(id){
 async function dispatch(m,sender){
   if(m.type==='STATUS'){
     if(!validId(m.id))return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:null,mission:null,version:VERSION};
-    // Remote completion must be visible even after the controller paused on a failed draft.
-    const remote=await MissionSignal.synchronize(m.id);
-    if(remote.mode==='mission'&&['COMPLETED','CANCELLED'].includes(remote.state)){
-      await serial(m.id,async()=>{
+    // Serialize polling with cancel, mode switch and sends: a stale ACTIVE status
+    // must never overwrite a terminal mission state.
+    const remote=await serial(m.id,async()=>{
+      const result=await MissionSignal.synchronize(m.id);
+      if(result.mode==='mission'&&['COMPLETED','CANCELLED'].includes(result.state)){
         const current=await read(m.id);
-        if(current&&current.state!==remote.state)await pause(m.id,remote.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',remote.state==='COMPLETED'?'COMPLETED':'PAUSED');
-      });
-    }
+        if(current&&(current.state!=='COMPLETED'||result.state==='CANCELLED')&&current.enabled)
+          await pause(m.id,result.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',result.state==='COMPLETED'?'COMPLETED':'PAUSED');
+        else if(current&&result.state==='COMPLETED'&&current.state!=='COMPLETED')
+          await pause(m.id,'Remote mission completed.','COMPLETED');
+      }
+      return result;
+    });
     return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),version:VERSION};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
