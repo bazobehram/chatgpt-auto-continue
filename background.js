@@ -116,7 +116,7 @@ async function dispatch(m,sender){
       const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
       const defaults=await config(),resumeMission=mission.mode==='mission'&&mission.id&&existing?.missionId===mission.id;
-      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
+      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?'unlimited':existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
       if(resumeMission&&s.limitMode!=='unlimited'&&s.turns>=s.maxTurns)throw Error('Mission continuation limit reached. Raise the limit or explicitly prepare a new mission.');
       await write(id,s);return {ok:true};
     });
