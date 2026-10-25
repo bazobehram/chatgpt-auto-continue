@@ -178,3 +178,16 @@ test('Mission Signal defaults unlimited and preserves Local Only cap on mode swi
  await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
  await activate(h);current=(await s(h)).session;assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,20);
 });
+
+
+test('manually confirmed mission instruction is reconciled without repeating setup',async()=>{
+ const {h}=await missionHarness(),c=h.fakePage();await activate(h);await c.tick();
+ c.page.onSend=()=>{c.page.entries.at(-1).innerText='unrelated user text';};
+ h.updateClock(7000);await c.tick();
+ assert.equal((await s(h)).mission.instructionState,'claimed');
+ assert.equal((await s(h)).session.enabled,false);
+ c.page.entries.at(-1).innerText=c.page.sent[0];
+ await c.tick();assert.equal((await s(h)).mission.instructionState,'sent');
+ await activate(h);await c.tick();h.updateClock(12000);await c.tick();
+ assert.equal(c.page.sent.length,1);
+});
