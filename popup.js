@@ -64,6 +64,8 @@ function paint(){
   if(document.activeElement!==$('limitMode'))$('limitMode').value=l.mode;
   if(document.activeElement!==$('maxTurns'))$('maxTurns').value=l.count;
   const missionMode=mission?.mode==='mission';
+  $('limitCard').hidden=missionMode;
+  $('modeHint').textContent=missionMode?'Mission Signal sends one setup instruction, then stops on verified completion. Offline safety: 5 attempts. Optional cap: Advanced settings.':'Local Only waits for an eligible reply and stops at your selected continuation limit.';
   $('limitMode').value=missionMode?'unlimited':l.mode;
   $('limitNumberLabel').hidden=missionMode||l.mode==='unlimited';
   $('limitMode').disabled=missionMode||!id||other||saving;
