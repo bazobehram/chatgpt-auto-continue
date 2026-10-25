@@ -94,7 +94,7 @@ async function dispatch(m,sender){
       if(sess?.enabled)throw Error('Pause before resuming.');
       if(sess?.limitMode==='limited'&&(sess.turns||0)>=(sess.maxTurns||1))throw Error('Continuation cap reached.');
       const defaults=await config();
-      await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:sess?.missionCapEnabled?'limited':'unlimited',missionCapEnabled:sess?.missionCapEnabled||false,localLimitMode:sess?.localLimitMode||sess?.limitMode||defaults.limitMode,maxTurns:sess?.maxTurns||defaults.maxTurns,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
+      await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:sess?.missionCapEnabled?'limited':'unlimited',missionCapEnabled:sess?.missionCapEnabled||false,localLimitMode:sess?.localLimitMode||defaults.limitMode,localMaxTurns:sess?.localMaxTurns||defaults.maxTurns,missionMaxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,maxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
       return {ok:true};
     });
   }
@@ -141,7 +141,13 @@ async function dispatch(m,sender){
     const n=Number(m.maxTurns);if(!Number.isSafeInteger(n)||n<1)throw Error('Continuation limit must be a positive whole number.');
     return serial(m.id,async()=>{const old=await read(m.id);if(old?.enabled&&old.ownerTabId!==t.id)throw Error('Change limits in the owner tab.');
       const remoteMode=(await MissionSignal.get(m.id)).mode==='mission';
-      const next={...(old||{enabled:false,state:'IDLE',turns:0}),limitMode:remoteMode?m.limitMode:m.limitMode,localLimitMode:remoteMode?(old?.localLimitMode||'limited'):m.limitMode,missionCapEnabled:remoteMode?m.limitMode==='limited':old?.missionCapEnabled||false,maxTurns:n};
+      const defaults=await config();
+      const next={...(old||{enabled:false,state:'IDLE',turns:0}),
+        limitMode:m.limitMode,maxTurns:n,
+        localLimitMode:remoteMode?(old?.localLimitMode||defaults.limitMode):m.limitMode,
+        localMaxTurns:remoteMode?(old?.localMaxTurns||old?.maxTurns||defaults.maxTurns):n,
+        missionCapEnabled:remoteMode?m.limitMode==='limited':old?.missionCapEnabled||false,
+        missionMaxTurns:remoteMode?n:old?.missionMaxTurns||20};
       await write(m.id,next);if(next.enabled&&next.limitMode==='limited'&&next.turns>=n)await pause(m.id,'Maximum auto-continue count reached.');return {ok:true};});
   }
   if(m.type==='SET_MISSION_CAP'){
@@ -151,7 +157,7 @@ async function dispatch(m,sender){
     return serial(m.id,async()=>{
       const old=await read(m.id);if(old?.enabled)throw Error('Pause the mission before changing its safety cap.');
       if((await MissionSignal.get(m.id)).mode!=='mission')throw Error('Choose Mission Signal first.');
-      await write(m.id,{...(old||{enabled:false,state:'IDLE',turns:0}),missionCapEnabled:m.enabled===true,maxTurns:n,limitMode:m.enabled===true?'limited':'unlimited'});
+      await write(m.id,{...(old||{enabled:false,state:'IDLE',turns:0}),missionCapEnabled:m.enabled===true,missionMaxTurns:n,maxTurns:n,limitMode:m.enabled===true?'limited':'unlimited'});
       return {ok:true};
     });
   }
@@ -174,7 +180,9 @@ async function dispatch(m,sender){
       if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
       const defaults=await config(),resumeMission=mission.mode==='mission'&&mission.id&&existing?.missionId===mission.id;
-      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?(existing?.missionCapEnabled?'limited':'unlimited'):existing?.localLimitMode||existing?.limitMode||defaults.limitMode,missionCapEnabled:existing?.missionCapEnabled||false,localLimitMode:existing?.localLimitMode||existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
+      const localMax=existing?.localMaxTurns||existing?.maxTurns||defaults.maxTurns;
+      const missionMax=existing?.missionMaxTurns||existing?.maxTurns||20;
+      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?(existing?.missionCapEnabled?'limited':'unlimited'):existing?.localLimitMode||existing?.limitMode||defaults.limitMode,missionCapEnabled:existing?.missionCapEnabled||false,localLimitMode:existing?.localLimitMode||existing?.limitMode||defaults.limitMode,localMaxTurns:localMax,missionMaxTurns:missionMax,maxTurns:mission.mode==='mission'?missionMax:localMax,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
       if(resumeMission&&s.limitMode!=='unlimited'&&s.turns>=s.maxTurns)throw Error('Mission continuation limit reached. Raise the limit or explicitly prepare a new mission.');
       await write(id,s);return {ok:true};
     });
