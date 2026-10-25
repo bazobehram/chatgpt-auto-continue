@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ask=async m=>{const r=await chrome.runtime.sendMessage(m);if(!r?.ok)throw Error(r?.error||r?.reason||'Controller unavailable');return r;};
 const getId=url=>{try{const u=new URL(url);return u.origin==='https://chatgpt.com'?u.pathname.match(/^(?:\/g\/[^/]+)?\/c\/([\w-]{10,})\/?$/)?.[1]||null:null;}catch{return null;}};
-let tab,id,session,settings,mission=null,missionHistory=[],health=null,dirty=false,saving=false,ready=false,scope='chat';
+let tab,id,session,settings,mission=null,missionHistory=[],noticeHistory=[],health=null,dirty=false,saving=false,ready=false,scope='chat';
 let refreshing=false,refreshQueued=false,refreshTimer=null,closed=false;
 const active=()=>Boolean(session?.enabled&&session.ownerTabId===tab?.id);
 const occupied=()=>Boolean(session?.enabled&&session.ownerTabId!==tab?.id);
@@ -32,12 +32,19 @@ function paint(){
   const on=active(),other=occupied(),state=session?.state||'IDLE',status=statusOf(session,health,mission),l=limitOf(session),remoteDone=mission?.mode==='mission'&&mission.state==='COMPLETED';
   $('missionMode').value=mission?.mode||'local';$('missionMode').disabled=!id||Boolean(session?.enabled)||saving;
   $('missionStatus').textContent=mission?.mode!=='mission'?'Local Only · no server required':remoteDone?'Connected · mission completed':mission.state==='CANCELLED'?'Mission cancelled':mission.connection==='disconnected'?'Disconnected · '+(mission.offlineAttempts||0)+'/5':mission.id?'Connected · '+(mission.instructionState==='sent'?'instruction delivered':mission.instructionState==='claimed'?'instruction needs review':'instruction pending'):'Mission registers when started';
-  $('missionHistoryPanel').hidden=!missionHistory.length;
-  $('missionHistoryCount').textContent=String(missionHistory.length);
-  $('missionHistoryItems').replaceChildren(...missionHistory.map(entry=>{
+  const notices=noticeHistory.map(entry=>({...entry,kind:'notice'}));
+  const previousMissions=missionHistory.filter(entry=>!noticeHistory.some(n=>n.missionId===entry.id&&n.state===entry.state))
+    .map(entry=>({...entry,kind:'mission'}));
+  const history=[...notices,...previousMissions].sort((a,b)=>(b.recordedAt||0)-(a.recordedAt||0)).slice(0,20);
+  $('missionHistoryPanel').hidden=!history.length;
+  $('missionHistoryCount').textContent=String(history.length);
+  $('missionHistoryItems').replaceChildren(...history.map(entry=>{
     const row=document.createElement('div');row.className='mission-history-row';
     const when=Number.isFinite(entry.recordedAt)?new Date(entry.recordedAt).toLocaleString():'';
-    row.textContent=`${entry.state} · ${entry.id} · ${when}`;
+    const source=entry.kind==='notice'?(entry.mode==='mission'?'Mission Signal':'Local Only'):'Mission Signal';
+    const detail=entry.kind==='notice'?(entry.reason||''):(entry.id||'');
+    row.textContent=`${source} · ${entry.state} · ${when}${detail?' · '+detail:''}`;
+    row.title=entry.missionId||entry.id||'';
     return row;
   }));
   $('missionIdentity').hidden=!mission?.id;$('missionIdentity').textContent=mission?.id?'Mission '+mission.id:'';
@@ -72,7 +79,7 @@ function paint(){
 async function refresh(initial=false){
   if(closed||(!ready&&!initial))return;if(refreshing){refreshQueued=true;return;}refreshing=true;
   try{
-    const r=await ask({type:'STATUS',id});session=r.session;settings=r.settings;mission=r.mission;missionHistory=r.missionHistory||[];health=await probe(session?.ownerTabId,id,session);
+    const r=await ask({type:'STATUS',id});session=r.session;settings=r.settings;mission=r.mission;missionHistory=r.missionHistory||[];noticeHistory=r.noticeHistory||[];health=await probe(session?.ownerTabId,id,session);
     if(initial){
       $('conversation').textContent=id?(tab.title||'ChatGPT conversation').replace(/\s*[|–-]\s*ChatGPT\s*$/i,''):'Open a saved ChatGPT conversation';
       $('message').value=session?.override||settings.message;
