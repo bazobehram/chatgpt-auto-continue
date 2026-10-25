@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -84,6 +84,7 @@ async function dispatch(m,sender){
     return serial(m.id,async()=>{if((await read(m.id))?.enabled)throw Error('Pause before changing mission mode.');
       if(m.type==='NEW_MISSION'){
         const current=await MissionSignal.get(m.id);
+        if(current.registered&&current.state==='ACTIVE')throw Error('Cancel the active remote mission before creating a new one.');
         // This invalidates the local controller's association; it does not claim
         // to cancel a registered mission on the remote service.
         await MissionSignal.put(m.id,{mode:'mission'});
