@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -47,7 +47,31 @@ async function dispatch(m,sender){
     if(!validId(m.id))throw Error('Open a saved conversation first.');
     const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
     return serial(m.id,async()=>{if((await read(m.id))?.enabled)throw Error('Pause before changing mission mode.');
-      if(m.type==='NEW_MISSION')await MissionSignal.put(m.id,{mode:'mission'});else await MissionSignal.setMode(m.id,m.mode);return {ok:true};});
+      if(m.type==='NEW_MISSION'){
+        const current=await MissionSignal.get(m.id);
+        // This invalidates the local controller's association; it does not claim
+        // to cancel a registered mission on the remote service.
+        await MissionSignal.put(m.id,{mode:'mission'});
+        const previous=await read(m.id);
+        if(previous)await write(m.id,{...previous,enabled:false,ownerTabId:null,state:'PAUSED',missionId:null,lastClaim:null,lastHandled:null,baseline:null,lastError:'New mission selected. Review and clear any old draft before Start.'});
+        return {ok:true,replaced:current.id||null};
+      }
+      else await MissionSignal.setMode(m.id,m.mode);return {ok:true};});
+  }
+  if(m.type==='RECONCILE_INSTRUCTION'){
+    if(!validId(m.id)||!sender.tab||!tabMatches(sender.tab.url,m.id))return {ok:false};
+    return serial(m.id,async()=>{
+      const mission=await MissionSignal.get(m.id),session=await read(m.id);
+      if(mission.mode!=='mission'||mission.instruction?.state!=='claimed'||!session?.lastClaim||
+         session.lastClaim.kind!=='instruction'||session.lastClaim.token!==mission.instruction.token)return {ok:false};
+      const expected=MissionSignal.instruction(mission.id);
+      // Only the actual newest user message in this exact conversation is eligible.
+      if(String(m.userText||'').trim()!==expected||!Number.isInteger(m.userCount)||
+         m.userCount<=(session.baseline?.userCount||0))return {ok:false};
+      if(!await MissionSignal.acknowledgeInstruction(m.id,session.lastClaim.token))return {ok:false};
+      await write(m.id,{...session,enabled:false,state:'PAUSED',lastError:'Mission instruction found in transcript. Press Start to resume this mission.',lastHandled:session.lastClaim.assistantKey});
+      return {ok:true,reconciled:true};
+    });
   }
   if(m.type==='SET_SETTINGS'){
     const s=await config(),r=m.settings||{};
