@@ -175,7 +175,8 @@ test('Mission Signal defaults unlimited and preserves Local Only cap on mode swi
  await h.rpc({type:'SET_MISSION_CAP',id:CHAT,tabId:10,enabled:false,maxTurns:20});
  await activate(h);let current=(await s(h)).session;assert.equal(current.limitMode,'unlimited');assert.equal(current.maxTurns,20);
  await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
- await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ assert.equal((await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10})).ok,true);
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
  await activate(h);current=(await s(h)).session;assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,20);
 });
 
