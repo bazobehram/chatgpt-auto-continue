@@ -28,7 +28,7 @@ async function owner(id,sender){
   if(!s?.enabled || !Number.isInteger(sender.tab?.id) || s.ownerTabId!==sender.tab.id || !tabMatches(sender.tab.url,id)) return null;
   return s;
 }
-async function pause(id,reason,state='PAUSED'){const s=await read(id);if(s){await write(id,{...s,enabled:false,state:['PAUSED','NEEDS_USER','COMPLETED','ERROR'].includes(state)?state:'PAUSED',lastError:String(reason).slice(0,360)});}}
+async function pause(id,reason,state='PAUSED'){const s=await read(id);if(s){await write(id,{...s,enabled:false,state:['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED',lastError:String(reason).slice(0,360)});}}
 async function sessionStatus(id){
   let s=await read(id);if(!s?.enabled)return s;
   let t;try{t=await chrome.tabs.get(s.ownerTabId);}catch{}
@@ -48,10 +48,8 @@ async function dispatch(m,sender){
       const result=await MissionSignal.synchronize(m.id);
       if(result.mode==='mission'&&['COMPLETED','CANCELLED'].includes(result.state)){
         const current=await read(m.id);
-        if(current&&(current.state!=='COMPLETED'||result.state==='CANCELLED')&&current.enabled)
-          await pause(m.id,result.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',result.state==='COMPLETED'?'COMPLETED':'PAUSED');
-        else if(current&&result.state==='COMPLETED'&&current.state!=='COMPLETED')
-          await pause(m.id,'Remote mission completed.','COMPLETED');
+        if(current&&current.state!==result.state)
+          await pause(m.id,result.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',result.state);
       }
       return result;
     });
@@ -66,7 +64,7 @@ async function dispatch(m,sender){
       const current=await read(m.id);
       if(current?.enabled&&current.ownerTabId!==t.id)throw Error('Only owner tab can cancel.');
       const remote=await MissionSignal.cancel(m.id); // fail closed: do not claim cancellation on network failure
-      if(current)await write(m.id,{...current,enabled:false,ownerTabId:null,state:remote.state==='COMPLETED'?'COMPLETED':'PAUSED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled and continuation stopped.'});
+      if(current)await write(m.id,{...current,enabled:false,ownerTabId:null,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled and continuation stopped.'});
       return {ok:true,state:remote.state};
     });
   }
