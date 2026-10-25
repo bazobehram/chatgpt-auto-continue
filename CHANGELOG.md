@@ -1,3 +1,13 @@
+## v0.5.1 — Mission instruction recovery
+
+- Wait up to 4.5 seconds for the ChatGPT Send control to become ready after writing the setup instruction, without repeated clicks.
+- Reconcile a manually submitted exact Mission Signal instruction against the active mission and its send journal, even when the controller was paused.
+- Surface authoritative remote completion in the popup while the controller is paused.
+- Add a confirmation and explicit warning for **Discard & new mission** (local detachment does not remotely cancel the old mission).
+- Preserve fail-closed behavior when actual submission status is unknown.
+
+**Verification:** JavaScript syntax checks passed. Full Node/Playwright suite and authenticated Chrome acceptance are pending on the user's development computer.
+
 # v0.5.0 — independent Mission Signal
 
 - Independent FastAPI/SQLite Mission Signal v0.1.0 deployed on Ubuntu homeserver with a dedicated Docker Compose project and separate Cloudflare HTTPS tunnel.
