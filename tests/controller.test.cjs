@@ -191,3 +191,23 @@ test('manually confirmed mission instruction is reconciled without repeating set
  await activate(h);await c.tick();h.updateClock(12000);await c.tick();
  assert.equal(c.page.sent.length,1);
 });
+
+
+test('terminal mission history persists after reset and switching to Local Only',async()=>{
+ const {h}=await missionHarness();await deliverInstruction(h);
+ const finished=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});assert.equal(finished.state,'CANCELLED');
+ const first=await s(h);assert.equal(first.missionHistory[0].state,'CANCELLED');
+ const oldId=first.missionHistory[0].id;
+ assert.equal((await h.rpc({type:'NEW_MISSION',id:CHAT,tabId:10})).ok,true);
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ h.restart();const result=await s(h);
+ assert.equal(result.missionHistory[0].id,oldId);assert.equal(result.missionHistory[0].state,'CANCELLED');
+});
+
+test('cannot switch from active registered Mission Signal to Local Only without cancellation',async()=>{
+ const {h}=await missionHarness();await deliverInstruction(h);
+ await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
+ const result=await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ assert.equal(result.ok,false);assert.match(result.error,/Cancel the active mission/);
+ assert.equal((await s(h)).mission.mode,'mission');
+});
