@@ -2,12 +2,26 @@
 (() => {
   if(window.__autoContinueController)return;
   window.__autoContinueController=true;
+  let stopped=false,scheduled=null,timer=null,observer=null;
+  function shutdown(){
+    if(stopped)return;
+    stopped=true;
+    if(timer!==null)clearInterval(timer);
+    if(scheduled!==null)clearTimeout(scheduled);
+    observer?.disconnect();
+    if(window.__autoContinueController)window.__autoContinueController=false;
+  }
+  const invalidContext=e=>/Extension context invalidated|context invalidated|Extension has been reloaded/i.test(String(e?.message||e));
   const documentId=`${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const CHAT_RE=/^(?:\/g\/[^/]+)?\/c\/([\w-]{10,})\/?$/;
   const MESSAGE_SEL='[data-message-author-role="assistant"], [data-message-author-role="user"], [data-chatgpt-search-unit-key$=":assistant"], [data-chatgpt-search-unit-key$=":user"]';
   const role=e=>e.getAttribute('data-message-author-role')||(e.getAttribute('data-chatgpt-search-unit-key')||'').split(':').at(-1);
   let sessionGeneration=null;
-  const send=msg=>chrome.runtime.sendMessage({...msg,generation:sessionGeneration});
+  const send=async msg=>{
+    if(stopped)throw Error('Controller stopped');
+    try{return await chrome.runtime.sendMessage({...msg,generation:sessionGeneration});}
+    catch(e){if(invalidContext(e))shutdown();throw e;}
+  };
   const now=()=>Date.now();
   const getId=()=>location.pathname.match(CHAT_RE)?.[1]||null;
   const hash=text=>{let v=2166136261;for(let i=0;i<text.length;i++)v=Math.imul(v^text.charCodeAt(i),16777619);return (v>>>0).toString(16);};
@@ -58,7 +72,7 @@
     }else await progress(id,'AWAITING_REPLY');
   }
   async function cycle(){
-    if(running)return;
+    if(running||stopped)return;
     const id=getId();if(!id)return;
     running=true;
     try{
@@ -178,15 +192,14 @@
         if(!confirmed.ok)throw Error('Send clicked but journal not confirmed');
         reset(snapshot());observedNewUser=false;lastState='AWAITING_REPLY';
       }catch(e){await pause(id,`Submission needs review: ${String(e.message||e)}. Check the composer/transcript; no automatic retry.`);}
-    }catch(e){console.warn('[Auto-Continue]',e);}finally{running=false;}
+    }catch(e){if(invalidContext(e)){shutdown();return;}if(!stopped)console.warn('[Auto-Continue]',e);}finally{running=false;}
   }
   chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
-  let stopped=false,scheduled=null;
-  const observer=new MutationObserver(()=>{if(!running&&!scheduled)scheduled=setTimeout(()=>{scheduled=null;void cycle();},150);});
+  observer=new MutationObserver(()=>{if(!running&&!scheduled)scheduled=setTimeout(()=>{scheduled=null;void cycle();},150);});
   observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['aria-label','data-testid','aria-busy','disabled','data-is-streaming','data-talvt-turn-state']});
-  const timer=setInterval(()=>void cycle(),15000);
+  timer=setInterval(()=>void cycle(),15000);
   chrome.storage?.onChanged?.addListener(()=>void cycle());
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)void cycle();});
-  window.addEventListener('pagehide',()=>{stopped=true;clearInterval(timer);observer.disconnect();});
+  window.addEventListener('pagehide',shutdown);
   void cycle();
 })();
