@@ -38,6 +38,10 @@ const root=path.resolve(__dirname,'..');
   const a=await newChat();
   await check('Registration and one automatically acknowledged instruction; no secrets in chat',async()=>{
    await instruction(a);const text=(await sent(a))[0],s=await status(a);assert.match(text,/mission-signal complete/);assert.ok(!text.includes('fixture-secret-only'));assert.equal(s.session.turns,0);assert.equal(missions.size,1);
+   const p=await context.newPage();await a.page.bringToFront();await p.goto(popupUrl);
+   assert.equal(await p.locator('#limitCard').isHidden(),true);
+   assert.match(await p.locator('#modeHint').textContent(),/verified completion/);
+   await p.close();
   });
   await check('Refresh and explicit resume never repeat a confirmed instruction',async()=>{
    await a.page.reload();await tick(a);await wait(async()=>(await status(a)).session.enabled===false,'refresh paused');await start(a);await a.page.waitForTimeout(3500);assert.deepEqual(await sent(a),[]);assert.equal((await status(a)).mission.instructionState,'sent');
@@ -61,7 +65,11 @@ const root=path.resolve(__dirname,'..');
    await a.page.reload();await tick(a);assert.equal((await rpc({type:'SET_SESSION',id:a.id,tabId:a.tabId,enabled:true})).ok,false);assert.equal((await status(a)).mission.offlineAttempts,5);
   });
   await check('Explicit Local Only continues independently throughout the remote outage',async()=>{
-   const c=await newChat('local');await start(c);await c.page.evaluate(()=>mock.user('local QA'));await reply(c);await wait(async()=>(await sent(c)).length===1,'Local Only offline continuation');assert.equal((await status(c)).session.enabled,true);await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});
+   const c=await newChat('local');await start(c);
+   const p=await context.newPage();await c.page.bringToFront();await p.goto(popupUrl);
+   assert.equal(await p.locator('#limitCard').isVisible(),true);
+   await p.close();
+   await c.page.evaluate(()=>mock.user('local QA'));await reply(c);await wait(async()=>(await sent(c)).length===1,'Local Only offline continuation');assert.equal((await status(c)).session.enabled,true);await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});
   });
   await check('Reconnection synchronizes remote completion and never sends another go',async()=>{
    const m=(await status(a)).mission;missions.get(m.id).state='COMPLETED';online=true;const r=await rpc({type:'SET_SESSION',id:a.id,tabId:a.tabId,enabled:true});assert.equal(r.ok,false);assert.equal((await status(a)).session.state,'COMPLETED');assert.deepEqual(await sent(a),[]);
