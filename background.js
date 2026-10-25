@@ -44,16 +44,40 @@ async function dispatch(m,sender){
     if(!validId(m.id))return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:null,mission:null,version:VERSION};
     // Remote completion must be visible even after the controller paused on a failed draft.
     const remote=await MissionSignal.synchronize(m.id);
-    if(remote.mode==='mission'&&remote.state==='COMPLETED'){
+    if(remote.mode==='mission'&&['COMPLETED','CANCELLED'].includes(remote.state)){
       await serial(m.id,async()=>{
         const current=await read(m.id);
-        if(current&&current.state!=='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');
+        if(current&&current.state!==remote.state)await pause(m.id,remote.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',remote.state==='COMPLETED'?'COMPLETED':'PAUSED');
       });
     }
     return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),version:VERSION};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){await MissionSignal.configure(m.enrollment);return {ok:true};}
+  if(m.type==='CANCEL_MISSION'){
+    if(!validId(m.id))throw Error('Open a saved conversation first.');
+    const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const current=await read(m.id);
+      if(current?.enabled&&current.ownerTabId!==t.id)throw Error('Only owner tab can cancel.');
+      const remote=await MissionSignal.cancel(m.id); // fail closed: do not claim cancellation on network failure
+      if(current)await write(m.id,{...current,enabled:false,ownerTabId:null,state:remote.state==='COMPLETED'?'COMPLETED':'PAUSED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled and continuation stopped.'});
+      return {ok:true,state:remote.state};
+    });
+  }
+  if(m.type==='RESUME_MISSION'){
+    if(!validId(m.id))throw Error('Open a saved conversation first.');
+    const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const sess=await read(m.id),mstate=await MissionSignal.synchronize(m.id,true);
+      if(mstate.mode!=='mission'||mstate.state!=='ACTIVE'||mstate.instruction?.state!=='sent')throw Error('Mission instruction not verified. Review transcript or start a new mission.');
+      if(sess?.enabled)throw Error('Pause before resuming.');
+      if(sess?.limitMode==='limited'&&(sess.turns||0)>=(sess.maxTurns||1))throw Error('Continuation cap reached.');
+      const defaults=await config();
+      await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:'unlimited',maxTurns:sess?.maxTurns||defaults.maxTurns,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
+      return {ok:true};
+    });
+  }
   if(m.type==='SET_MISSION_MODE'||m.type==='NEW_MISSION'){
     if(!validId(m.id))throw Error('Open a saved conversation first.');
     const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
@@ -113,7 +137,8 @@ async function dispatch(m,sender){
       if(!enabled && existing?.enabled && existing.ownerTabId!==tabId) throw Error('Only the owner tab can pause this conversation.');
       if(!enabled){await write(id,{...(existing||fresh(tabId,override)),enabled:false,ownerTabId:null,override,state:'PAUSED',lastError:''});return {ok:true};}
       if(existing?.enabled){await write(id,{...existing,override});return {ok:true};}
-      const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
+      const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='CANCELLED')throw Error('Mission cancelled. Prepare a new mission.');
+      if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
       const defaults=await config(),resumeMission=mission.mode==='mission'&&mission.id&&existing?.missionId===mission.id;
       const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?'unlimited':existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
@@ -144,7 +169,8 @@ async function dispatch(m,sender){
     if(!s)return {ok:false,error:'Session inactive or not owned by this tab.'};
     if(m.generation&&m.generation!==s.generation)return {ok:false,reason:'stale activation'};
     if(m.type==='MISSION_SYNC'){
-      const mission=await MissionSignal.synchronize(m.id,Boolean(m.force));if(mission.mode==='mission'&&mission.state==='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');return {ok:true,mission:MissionSignal.summary(mission)};
+      const mission=await MissionSignal.synchronize(m.id,Boolean(m.force));if(mission.mode==='mission'&&mission.state==='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');
+      if(mission.mode==='mission'&&mission.state==='CANCELLED')await pause(m.id,'Mission cancelled.');return {ok:true,mission:MissionSignal.summary(mission)};
     }
     if(m.type==='CHECK_SEND')return {ok:s.state==='SENDING'&&s.lastClaim?.token===m.token};
     if(m.type==='ATTACH'){
