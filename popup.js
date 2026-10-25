@@ -8,7 +8,7 @@ const active=()=>Boolean(session?.enabled&&session.ownerTabId===tab?.id);
 const occupied=()=>Boolean(session?.enabled&&session.ownerTabId!==tab?.id);
 const notify=(text,error=false)=>{$('flash').textContent=text;$('flash').className=error?'error':'';};
 const guard=fn=>async()=>{try{await fn();}catch(e){notify(e.message,true);}};
-const limitOf=s=>({mode:s?.limitMode||settings.limitMode||'limited',count:s?.maxTurns||settings.maxTurns||2});
+const limitOf=s=>mission?.mode==='local'||!mission?.mode?({mode:s?.localLimitMode||s?.limitMode||settings.limitMode||'limited',count:s?.localMaxTurns||s?.maxTurns||settings.maxTurns||2}):({mode:s?.limitMode||'unlimited',count:s?.missionMaxTurns||s?.maxTurns||20});
 const progressOf=s=>{const l=limitOf(s),n=s?.turns||0;return l.mode==='unlimited'?n+' continuations · Unlimited ∞':n+' / '+l.count+' continuations';};
 // A stored enabled flag is not proof that the page controller is operational.
 async function probe(tabId,chatId,s){
@@ -52,7 +52,7 @@ function paint(){
   $('missionActions').hidden=mission?.mode!=='mission'||!mission?.id;
   $('missionCapSettings').hidden=mission?.mode!=='mission';
   $('missionCap').checked=Boolean(session?.missionCapEnabled);
-  if(document.activeElement!==$('missionCapNumber'))$('missionCapNumber').value=session?.maxTurns||settings.maxTurns||20;
+  if(document.activeElement!==$('missionCapNumber'))$('missionCapNumber').value=session?.missionMaxTurns||20;
   $('missionCap').disabled=Boolean(session?.enabled)||other||saving;
   $('missionCapNumber').disabled=Boolean(session?.enabled)||other||saving||!session?.missionCapEnabled;
   $('resumeMission').disabled=Boolean(session?.enabled)||other||saving||remoteDone||mission?.state==='CANCELLED'||mission?.instructionState!=='sent';
