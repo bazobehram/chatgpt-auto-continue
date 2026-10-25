@@ -68,6 +68,9 @@
       sessionGeneration=sess?.generation||null;
       if(sess?.enabled&&res.callerTabId!==undefined&&sess.ownerTabId!==res.callerTabId)return;
       if(activeId!==id){activeId=id;activationGeneration=null;lastState='';reset(s);}
+      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&s.lastRole==='user'&&s.userText){
+        await send({type:'RECONCILE_INSTRUCTION',id,userText:s.userText,userKey:s.userKey,userCount:s.userCount});
+      }
       if(!sess?.enabled){activationGeneration=null;lastState='';reset(s);return;}
       if(mission?.mode==='mission'){
         const sync=await send({type:'MISSION_SYNC',id});mission=sync.mission||mission;if(mission.state==='COMPLETED')return;
@@ -146,9 +149,16 @@
           if(!success)throw Error('Composer text insertion failed');
           editor.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:message}));
         }
-        await new Promise(resolve=>setTimeout(resolve,300));
-        const check=snapshot();
-        if(check.editorText!==message||!check.submit||check.submit.disabled||check.busy)throw Error('Composer not ready for submission');
+        // React can commit editor state asynchronously. Only the first click is a send attempt;
+        // bounded readiness observation here does not retry submission.
+        let check;const readyDeadline=now()+4500;
+        do{
+          await new Promise(resolve=>setTimeout(resolve,150));
+          check=snapshot();
+          if(check.editorText!==message||check.busy||getId()!==id)throw Error('Composer changed before submission');
+          if(check.submit&&!check.submit.disabled)break;
+        }while(now()<readyDeadline);
+        if(!check.submit||check.submit.disabled)throw Error('Composer not ready for submission');
         const allowed=await send({type:'CHECK_SEND',id,token:claim.token});
         const final=snapshot();
         if(!allowed.ok||getId()!==id||final.busy||final.editorText!==message||final.assistantSig!==s.assistantSig||!final.submit||final.submit.disabled)throw Error('Paused or conversation changed before click');
@@ -166,7 +176,7 @@
         const confirmed=await send({type:'CONFIRM_SENT',id,token:claim.token});
         if(!confirmed.ok)throw Error('Send clicked but journal not confirmed');
         reset(snapshot());observedNewUser=false;lastState='AWAITING_REPLY';
-      }catch(e){await pause(id,`Submission uncertain: ${String(e.message||e)}. Never automatically retry.`);}
+      }catch(e){await pause(id,`Submission needs review: ${String(e.message||e)}. Check the composer/transcript; no automatic retry.`);}
     }catch(e){console.warn('[Auto-Continue]',e);}finally{running=false;}
   }
   chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
