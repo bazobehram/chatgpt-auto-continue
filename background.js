@@ -28,7 +28,24 @@ async function owner(id,sender){
   if(!s?.enabled || !Number.isInteger(sender.tab?.id) || s.ownerTabId!==sender.tab.id || !tabMatches(sender.tab.url,id)) return null;
   return s;
 }
-async function pause(id,reason,state='PAUSED'){const s=await read(id);if(s){await write(id,{...s,enabled:false,state:['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED',lastError:String(reason).slice(0,360)});}}
+const noticesKey=id=>'notices:'+id;
+async function noticeHistory(id){return (await chrome.storage.local.get(noticesKey(id)))[noticesKey(id)]||[];}
+async function rememberNotice(id,item){
+  const entries=await noticeHistory(id);
+  if(entries[0]&&entries[0].generation===item.generation&&entries[0].state===item.state&&entries[0].reason===item.reason)return;
+  await chrome.storage.local.set({[noticesKey(id)]:[item,...entries].slice(0,20)});
+}
+async function pause(id,reason,state='PAUSED'){
+  const s=await read(id);if(!s)return;
+  const nextState=['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED';
+  const explanation=String(reason).slice(0,360);
+  await write(id,{...s,enabled:false,state:nextState,lastError:explanation});
+  if((nextState==='COMPLETED'||nextState==='CANCELLED'||nextState==='ERROR'||nextState==='NEEDS_USER'||/uncertain|disconnected|failed|unavailable|error|exhausted/i.test(explanation))
+    &&(s.enabled||s.state!==nextState||s.lastError!==explanation)){
+    const m=await MissionSignal.get(id);
+    await rememberNotice(id,{mode:m.mode||'local',missionId:m.mode==='mission'?m.id||null:null,state:nextState,reason:explanation,turns:s.turns||0,generation:s.generation||null,recordedAt:Date.now()});
+  }
+}
 async function sessionStatus(id){
   let s=await read(id);if(!s?.enabled)return s;
   let t;try{t=await chrome.tabs.get(s.ownerTabId);}catch{}
@@ -53,7 +70,7 @@ async function dispatch(m,sender){
       }
       return result;
     });
-    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),version:VERSION};
+    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),noticeHistory:await noticeHistory(m.id),version:VERSION};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){await MissionSignal.configure(m.enrollment);return {ok:true};}
