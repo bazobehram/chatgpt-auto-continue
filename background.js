@@ -204,6 +204,13 @@ async function dispatch(m,sender){
       await write(m.id,{...s,state:'SENDING',turns:(s.turns||0)+(instruction?0:1),lastClaim:claim,lastHandled:claim.assistantKey,kickoffRequested:false,lastError:'',waitingSince:Date.now(),lastActivity:Date.now()});
       return {ok:true,token:claim.token,message:initial?.message||String(s.override||(await config()).message||'go').trim()};
     }
+    if(m.type==='ABORT_UNSENT'){
+      if(s.state!=='SENDING'||s.lastClaim?.token!==m.token||m.clicked!==false)return {ok:false};
+      // This must be called only before the click path; no send attempt can have occurred.
+      if(s.lastClaim.kind==='instruction'&&!await MissionSignal.releaseUnsentInstruction(m.id,m.token))return {ok:false};
+      await write(m.id,{...s,enabled:false,state:'PAUSED',lastClaim:null,lastHandled:null,lastError:'Submission was not clicked. Review or clear the draft; Start can retry safely.'});
+      return {ok:true};
+    }
     if(m.type==='CONFIRM_SENT'){
       if(s.state!=='SENDING'||!s.lastClaim||s.lastClaim.token!==m.token)return {ok:false,reason:'stale claim'};
       if(s.lastClaim.kind==='instruction'&&!await MissionSignal.acknowledgeInstruction(m.id,m.token))return {ok:false,reason:'Mission instruction acknowledgment is uncertain'};
