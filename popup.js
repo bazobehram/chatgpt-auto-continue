@@ -82,7 +82,12 @@ $('toggleSession').onclick=guard(async()=>{if(active())await toggle(id,tab.id,fa
 $('kickoff').onclick=guard(async()=>{await saveMessage();await ask({type:'REQUEST_KICKOFF',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One continuation requested.');});
 $('openOwner').onclick=guard(()=>focusTab(session.ownerTabId));
 $('missionMode').onchange=guard(async()=>{await ask({type:'SET_MISSION_MODE',id,tabId:tab.id,mode:$('missionMode').value});await refresh();notify('Completion mode saved.');});
-$('newMission').onclick=guard(async()=>{await ask({type:'NEW_MISSION',id,tabId:tab.id});await refresh();notify('New mission prepared. Review the transcript before Start.');});
+$('newMission').onclick=guard(async()=>{
+  if(!confirm('Discard this mission locally and prepare a new one? The old remote mission will NOT be marked completed or cancelled. Clear any old instruction draft before Start.'))return;
+  await ask({type:'NEW_MISSION',id,tabId:tab.id});
+  await refresh();
+  notify('Previous mission detached locally. Clear old drafts and press Start for a new mission.');
+});
 $('missionConnectionForm').onsubmit=e=>{e.preventDefault();guard(async()=>{await ask({type:'SET_MISSION_CONNECTION',enrollment:$('enrollment').value});$('enrollment').value='';const c=await ask({type:'GET_MISSION_CONNECTION'});$('missionConfigured').textContent=c.configured?'Enrollment key saved.':'Enrollment key not configured.';notify('Connection saved.');})();};
 $('settingsForm').onsubmit=e=>{e.preventDefault();guard(async()=>{const next={};for(const k of ['settleSeconds','stallSeconds','watchdogSeconds'])next[k]=$(k).value;next.autoReload=$('autoReload').checked;await ask({type:'SET_SETTINGS',settings:next});await refresh();notify('Settings saved.');})();};
 async function renderTabs(expanded){
