@@ -35,7 +35,7 @@ function paint(){
   $('newMission').hidden=mission?.mode!=='mission'||!mission?.id||Boolean(session?.enabled);$('newMission').disabled=saving;
   $('status').textContent=other&&health?'Other tab':status;
   $('status').className='badge '+(['Needs attention','Recovery'].includes(status)?'attention':session?.enabled&&health?'running':status==='Paused'?'paused':'');
-  $('turns').textContent=l.mode==='unlimited'?(session?.turns||0)+' · ∞':(session?.turns||0)+' / '+l.count;
+  $('turns').textContent=mission?.mode==='mission'?(session?.turns||0)+' · ∞':l.mode==='unlimited'?(session?.turns||0)+' · ∞':(session?.turns||0)+' / '+l.count;
   $('limitProgress').textContent=progressOf(session);
   if(document.activeElement!==$('limitMode'))$('limitMode').value=l.mode;
   if(document.activeElement!==$('maxTurns'))$('maxTurns').value=l.count;
