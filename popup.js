@@ -2,7 +2,7 @@
 const $=id=>document.getElementById(id);
 const ask=async m=>{const r=await chrome.runtime.sendMessage(m);if(!r?.ok)throw Error(r?.error||r?.reason||'Controller unavailable');return r;};
 const getId=url=>{try{const u=new URL(url);return u.origin==='https://chatgpt.com'?u.pathname.match(/^(?:\/g\/[^/]+)?\/c\/([\w-]{10,})\/?$/)?.[1]||null:null;}catch{return null;}};
-let tab,id,session,settings,mission=null,health=null,dirty=false,saving=false,ready=false,scope='chat';
+let tab,id,session,settings,mission=null,missionHistory=[],health=null,dirty=false,saving=false,ready=false,scope='chat';
 let refreshing=false,refreshQueued=false,refreshTimer=null,closed=false;
 const active=()=>Boolean(session?.enabled&&session.ownerTabId===tab?.id);
 const occupied=()=>Boolean(session?.enabled&&session.ownerTabId!==tab?.id);
@@ -32,6 +32,14 @@ function paint(){
   const on=active(),other=occupied(),state=session?.state||'IDLE',status=statusOf(session,health,mission),l=limitOf(session),remoteDone=mission?.mode==='mission'&&mission.state==='COMPLETED';
   $('missionMode').value=mission?.mode||'local';$('missionMode').disabled=!id||Boolean(session?.enabled)||saving;
   $('missionStatus').textContent=mission?.mode!=='mission'?'Local Only · no server required':remoteDone?'Connected · mission completed':mission.state==='CANCELLED'?'Mission cancelled':mission.connection==='disconnected'?'Disconnected · '+(mission.offlineAttempts||0)+'/5':mission.id?'Connected · '+(mission.instructionState==='sent'?'instruction delivered':mission.instructionState==='claimed'?'instruction needs review':'instruction pending'):'Mission registers when started';
+  $('missionHistoryPanel').hidden=!missionHistory.length;
+  $('missionHistoryCount').textContent=String(missionHistory.length);
+  $('missionHistoryItems').replaceChildren(...missionHistory.map(entry=>{
+    const row=document.createElement('div');row.className='mission-history-row';
+    const when=Number.isFinite(entry.recordedAt)?new Date(entry.recordedAt).toLocaleString():'';
+    row.textContent=`${entry.state} · ${entry.id} · ${when}`;
+    return row;
+  }));
   $('missionIdentity').hidden=!mission?.id;$('missionIdentity').textContent=mission?.id?'Mission '+mission.id:'';
   $('newMission').hidden=mission?.mode!=='mission'||!mission?.id||Boolean(session?.enabled);$('newMission').disabled=saving;
   $('missionActions').hidden=mission?.mode!=='mission'||!mission?.id;
@@ -64,7 +72,7 @@ function paint(){
 async function refresh(initial=false){
   if(closed||(!ready&&!initial))return;if(refreshing){refreshQueued=true;return;}refreshing=true;
   try{
-    const r=await ask({type:'STATUS',id});session=r.session;settings=r.settings;mission=r.mission;health=await probe(session?.ownerTabId,id,session);
+    const r=await ask({type:'STATUS',id});session=r.session;settings=r.settings;mission=r.mission;missionHistory=r.missionHistory||[];health=await probe(session?.ownerTabId,id,session);
     if(initial){
       $('conversation').textContent=id?(tab.title||'ChatGPT conversation').replace(/\s*[|–-]\s*ChatGPT\s*$/i,''):'Open a saved ChatGPT conversation';
       $('message').value=session?.override||settings.message;
