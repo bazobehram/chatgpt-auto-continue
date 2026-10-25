@@ -40,7 +40,18 @@ async function sessionStatus(id){
   return s;
 }
 async function dispatch(m,sender){
-  if(m.type==='STATUS') return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:validId(m.id)?await sessionStatus(m.id):null,mission:validId(m.id)?MissionSignal.summary(await MissionSignal.get(m.id)):null,version:VERSION};
+  if(m.type==='STATUS'){
+    if(!validId(m.id))return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:null,mission:null,version:VERSION};
+    // Remote completion must be visible even after the controller paused on a failed draft.
+    const remote=await MissionSignal.synchronize(m.id);
+    if(remote.mode==='mission'&&remote.state==='COMPLETED'){
+      await serial(m.id,async()=>{
+        const current=await read(m.id);
+        if(current&&current.state!=='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');
+      });
+    }
+    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),version:VERSION};
+  }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){await MissionSignal.configure(m.enrollment);return {ok:true};}
   if(m.type==='SET_MISSION_MODE'||m.type==='NEW_MISSION'){
