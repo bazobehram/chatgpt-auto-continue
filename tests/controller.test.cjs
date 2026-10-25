@@ -123,7 +123,7 @@ test('Unlimited remote outage permits exactly five additional attempts, then rem
  assert.equal((await s(h)).session.enabled,false);h.restart();assert.equal((await s(h)).mission.offlineAttempts,5);assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);assert.equal(c.page.sent.length,6);
 });
 test('Limited never exceeds its cap during a remote outage',async()=>{
- const {h,remote}=await missionHarness();const c=await deliverInstruction(h);remote.online=false;
+ const {h,remote}=await missionHarness();await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:2});const c=await deliverInstruction(h);remote.online=false;
  for(let i=0;i<3;i++)await finishMissionReply(h,c);
  assert.equal((await s(h)).session.enabled,false);assert.equal((await s(h)).session.turns,2);assert.equal((await s(h)).mission.offlineAttempts,2);assert.equal(c.page.sent.length,3);
 });
@@ -141,7 +141,7 @@ test('mission mode does not equate intermediate prose with authoritative remote 
 
 
 test('same mission resume preserves Limited count, journal and offline grace across browser startup',async()=>{
- const {h,remote}=await missionHarness();const c=await deliverInstruction(h);remote.online=false;await finishMissionReply(h,c);const before=await s(h);assert.equal(before.session.turns,1);assert.equal(before.mission.offlineAttempts,1);
+ const {h,remote}=await missionHarness();await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:2});const c=await deliverInstruction(h);remote.online=false;await finishMissionReply(h,c);const before=await s(h);assert.equal(before.session.turns,1);assert.equal(before.mission.offlineAttempts,1);
  await h.events.startup();assert.equal((await s(h)).session.enabled,false);await activate(h);await c.tick();const after=await s(h);assert.equal(after.session.turns,1);assert.equal(after.session.lastClaim.token,before.session.lastClaim.token);assert.equal(after.mission.offlineAttempts,1);
  await finishMissionReply(h,c);assert.equal((await s(h)).session.turns,2);await finishMissionReply(h,c);assert.equal((await s(h)).session.enabled,false);assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);assert.equal(c.page.sent.length,3);
 });
