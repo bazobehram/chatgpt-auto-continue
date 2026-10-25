@@ -4,7 +4,18 @@ globalThis.MissionSignal=(()=>{
   const ENDPOINT='https://mission-signal.synovaq.org';
   const key=id=>'mission:'+id;
   const get=async id=>(await chrome.storage.local.get(key(id)))[key(id)]||{mode:'local'};
-  const put=async(id,m)=>chrome.storage.local.set({[key(id)]:m});
+  const historyKey=id=>'mission-history:'+id;
+  const getHistory=async id=>(await chrome.storage.local.get(historyKey(id)))[historyKey(id)]||[];
+  const put=async(id,m)=>{
+    await chrome.storage.local.set({[key(id)]:m});
+    if(m.id&&['COMPLETED','CANCELLED'].includes(m.state)){
+      const entries=await getHistory(id);
+      if(!entries.some(e=>e.id===m.id)){
+        entries.unshift({id:m.id,state:m.state,recordedAt:Date.now()});
+        await chrome.storage.local.set({[historyKey(id)]:entries.slice(0,12)});
+      }
+    }
+  };
   const connection=async()=>(await chrome.storage.local.get('missionConnection')).missionConnection||{endpoint:ENDPOINT};
   const summary=m=>({mode:m.mode||'local',id:m.id||null,state:m.state||null,connection:m.connection||'unconfigured',offlineAttempts:m.offlineAttempts||0,instructionState:m.instruction?.state||null,lastChecked:m.lastChecked||0});
   async function request(path,token,method='GET',body){
@@ -74,7 +85,7 @@ globalThis.MissionSignal=(()=>{
     const next={...m,state:'CANCELLED',registered:false,connection:'connected'};
     await put(id,next);return next;
   }
-  async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);await put(id,{...m,mode});}
+  async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);if(m.mode==='mission'&&mode==='local'&&m.registered&&m.state==='ACTIVE')throw Error('Cancel the active mission before switching to Local Only.');await put(id,{...m,mode});}
   async function configure(enrollment){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:ENDPOINT,enrollment:String(enrollment||c.enrollment||'').trim()}});}
-  return {get,put,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
+  return {get,put,getHistory,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
 })();
