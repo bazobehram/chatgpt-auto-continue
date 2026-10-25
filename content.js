@@ -148,6 +148,7 @@
       // IMPORTANT: No click happens until claim is durably persisted.
       const claim=await send({type:'CLAIM_SEND',id,kickoff,instruction,snapshot:{assistantKey:s.assistantKey,assistantSig:s.assistantSig}});
       if(!claim.ok)return;
+      let clicked=false;
       try{
         if(!getId()||getId()!==id)throw Error('Conversation navigated away');
         const permitted=await send({type:'CHECK_SEND',id,token:claim.token});if(!permitted.ok)throw Error('Paused before submission');
@@ -177,6 +178,7 @@
         const allowed=await send({type:'CHECK_SEND',id,token:claim.token});
         const final=snapshot();
         if(!allowed.ok||getId()!==id||final.busy||final.editorText!==message||final.assistantSig!==s.assistantSig||!final.submit||final.submit.disabled)throw Error('Paused or conversation changed before click');
+        clicked=true; // mark before invoking external UI behavior: click may throw after submission
         final.submit.click();
         // Wait for transcript evidence, not a fixed 450 ms guess. Never click a second time.
         let acknowledged=false;const deadline=now()+10000;
@@ -191,7 +193,13 @@
         const confirmed=await send({type:'CONFIRM_SENT',id,token:claim.token});
         if(!confirmed.ok)throw Error('Send clicked but journal not confirmed');
         reset(snapshot());observedNewUser=false;lastState='AWAITING_REPLY';
-      }catch(e){await pause(id,`Submission needs review: ${String(e.message||e)}. Check the composer/transcript; no automatic retry.`);}
+      }catch(e){
+        if(!clicked){
+          const aborted=await send({type:'ABORT_UNSENT',id,token:claim.token,clicked:false}).catch(()=>null);
+          if(aborted?.ok)return;
+        }
+        await pause(id,`Submission needs review: ${String(e.message||e)}. Check the composer/transcript; no automatic retry.`);
+      }
     }catch(e){if(invalidContext(e)){shutdown();return;}if(!stopped)console.warn('[Auto-Continue]',e);}finally{running=false;}
   }
   chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
