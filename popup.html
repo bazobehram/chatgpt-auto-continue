@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Auto-Continue</title><link rel="stylesheet" href="popup.css"></head><body>
-<header><div class="logo" aria-hidden="true"><img src="icons/icon-32.png" width="32" height="32" alt=""></div><div class="brand"><h1>Auto-Continue <small>v0.5.1</small></h1><span>Keep your work moving</span></div><span id="status" class="badge" role="status">Checking</span></header>
+<header><div class="logo" aria-hidden="true"><img src="icons/icon-32.png" width="32" height="32" alt=""></div><div class="brand"><h1>Auto-Continue <small>v0.6.0</small></h1><span>Keep your work moving</span></div><span id="status" class="badge" role="status">Checking</span></header>
 <main>
 <section class="conversation-card"><div class="eyebrow">CURRENT CONVERSATION <span id="turns">0 / 2</span></div><h2 id="conversation">Checking your tab…</h2><p id="activity">Checking the controller…</p><div id="lastError" class="notice" role="alert" hidden></div><button id="openOwner" class="link" hidden>Open owner tab</button></section>
 <section class="message-card">
@@ -9,8 +9,8 @@
 <div class="row small"><span id="messageSource">Using global default</span><button id="restore" class="link">Use global default</button></div>
 <fieldset class="limit-card"><legend>Continuation limit</legend><div class="row"><select id="limitMode" aria-label="Continuation limit mode"><option value="limited">Limited</option><option value="unlimited">Unlimited ∞</option></select><label id="limitNumberLabel" class="limit-number">Up to <input id="maxTurns" aria-label="Maximum continuations" type="number" min="1" step="1" value="2" required></label></div><div id="limitProgress" class="small">0 / 2 continuations</div></fieldset>
 <div class="row mission-mode"><label for="missionMode">Completion signal</label><select id="missionMode"><option value="local">Local Only</option><option value="mission">Mission Signal</option></select></div>
-<div class="row small"><span id="missionStatus">Local Only · no server required</span><button id="newMission" class="link" hidden>Discard &amp; new mission</button></div>
-<div id="missionIdentity" class="small mission-id" hidden></div>
+<div class="row small"><span id="missionStatus">Local Only · no server required</span><button id="newMission" class="link" hidden>New mission</button></div>
+<div id="missionIdentity" class="small mission-id" hidden></div><div id="missionActions" class="row mission-actions" hidden><button id="resumeMission" class="secondary" type="button">Resume</button><button id="cancelMission" class="secondary" type="button">Cancel mission</button></div>
 <div class="actions"><button id="toggleSession" class="primary" disabled>Start</button><button id="kickoff" class="secondary" disabled title="Start first, then continue the current finished reply">Send once</button></div>
 <p class="hint">Start waits in Local Only; Mission Signal sends one setup instruction.</p><div id="flash" role="status" aria-live="polite"></div>
 </section>
