@@ -152,12 +152,13 @@
         // React can commit editor state asynchronously. Only the first click is a send attempt;
         // bounded readiness observation here does not retry submission.
         let check;const readyDeadline=now()+4500;
+        let readinessChecks=0;
         do{
           await new Promise(resolve=>setTimeout(resolve,150));
           check=snapshot();
           if(check.editorText!==message||check.busy||getId()!==id)throw Error('Composer changed before submission');
           if(check.submit&&!check.submit.disabled)break;
-        }while(now()<readyDeadline);
+        }while(++readinessChecks<30&&now()<readyDeadline);
         if(!check.submit||check.submit.disabled)throw Error('Composer not ready for submission');
         const allowed=await send({type:'CHECK_SEND',id,token:claim.token});
         const final=snapshot();
