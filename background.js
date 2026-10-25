@@ -74,7 +74,7 @@ async function dispatch(m,sender){
       if(sess?.enabled)throw Error('Pause before resuming.');
       if(sess?.limitMode==='limited'&&(sess.turns||0)>=(sess.maxTurns||1))throw Error('Continuation cap reached.');
       const defaults=await config();
-      await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:'unlimited',maxTurns:sess?.maxTurns||defaults.maxTurns,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
+      await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:'unlimited',localLimitMode:sess?.localLimitMode||sess?.limitMode||defaults.limitMode,maxTurns:sess?.maxTurns||defaults.maxTurns,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
       return {ok:true};
     });
   }
@@ -120,7 +120,7 @@ async function dispatch(m,sender){
     if(!['limited','unlimited'].includes(m.limitMode))throw Error('Choose Limited or Unlimited.');
     const n=Number(m.maxTurns);if(!Number.isSafeInteger(n)||n<1)throw Error('Continuation limit must be a positive whole number.');
     return serial(m.id,async()=>{const old=await read(m.id);if(old?.enabled&&old.ownerTabId!==t.id)throw Error('Change limits in the owner tab.');
-      const next={...(old||{enabled:false,state:'IDLE',turns:0}),limitMode:m.limitMode,maxTurns:n};
+      const next={...(old||{enabled:false,state:'IDLE',turns:0}),limitMode:m.limitMode,localLimitMode:m.limitMode,maxTurns:n};
       await write(m.id,next);if(next.enabled&&next.limitMode==='limited'&&next.turns>=n)await pause(m.id,'Maximum auto-continue count reached.');return {ok:true};});
   }
   if(m.type==='SET_SESSION'){
@@ -142,7 +142,7 @@ async function dispatch(m,sender){
       if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
       const defaults=await config(),resumeMission=mission.mode==='mission'&&mission.id&&existing?.missionId===mission.id;
-      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?'unlimited':existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
+      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?'unlimited':existing?.localLimitMode||existing?.limitMode||defaults.limitMode,localLimitMode:existing?.localLimitMode||existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
       if(resumeMission&&s.limitMode!=='unlimited'&&s.turns>=s.maxTurns)throw Error('Mission continuation limit reached. Raise the limit or explicitly prepare a new mission.');
       await write(id,s);return {ok:true};
     });
