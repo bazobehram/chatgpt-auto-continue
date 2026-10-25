@@ -171,7 +171,10 @@ test('failed cancellation remains fail-closed without claiming success',async()=
 });
 
 test('Mission Signal defaults unlimited and preserves Local Only cap on mode switch',async()=>{
- const {h}=await missionHarness();await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:20});
+ const {h}=await missionHarness();
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:20});
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'mission'});
  await h.rpc({type:'SET_MISSION_CAP',id:CHAT,tabId:10,enabled:false,maxTurns:20});
  await activate(h);let current=(await s(h)).session;assert.equal(current.limitMode,'unlimited');assert.equal(current.maxTurns,20);
  await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
