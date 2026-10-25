@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ChatGPT Auto-Continue (Personal)",
   "description": "Personal, fail-closed, session-scoped ChatGPT continuation controller with a watchdog and write-ahead send journal.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",
