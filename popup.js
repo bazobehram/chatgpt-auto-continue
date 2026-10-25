@@ -34,11 +34,16 @@ function paint(){
   $('missionIdentity').hidden=!mission?.id;$('missionIdentity').textContent=mission?.id?'Mission '+mission.id:'';
   $('newMission').hidden=mission?.mode!=='mission'||!mission?.id||Boolean(session?.enabled);$('newMission').disabled=saving;
   $('missionActions').hidden=mission?.mode!=='mission'||!mission?.id;
+  $('missionCapSettings').hidden=mission?.mode!=='mission';
+  $('missionCap').checked=Boolean(session?.missionCapEnabled);
+  if(document.activeElement!==$('missionCapNumber'))$('missionCapNumber').value=session?.maxTurns||settings.maxTurns||20;
+  $('missionCap').disabled=Boolean(session?.enabled)||other||saving;
+  $('missionCapNumber').disabled=Boolean(session?.enabled)||other||saving||!session?.missionCapEnabled;
   $('resumeMission').disabled=Boolean(session?.enabled)||other||saving||remoteDone||mission?.state==='CANCELLED'||mission?.instructionState!=='sent';
   $('cancelMission').disabled=other||saving||remoteDone||mission?.state==='CANCELLED';
   $('status').textContent=other&&health?'Other tab':status;
   $('status').className='badge '+(['Needs attention','Recovery'].includes(status)?'attention':session?.enabled&&health?'running':status==='Paused'?'paused':'');
-  $('turns').textContent=mission?.mode==='mission'?(session?.turns||0)+' · ∞':l.mode==='unlimited'?(session?.turns||0)+' · ∞':(session?.turns||0)+' / '+l.count;
+  $('turns').textContent=mission?.mode==='mission'?(session?.missionCapEnabled?(session?.turns||0)+' / '+(session?.maxTurns||settings.maxTurns):(session?.turns||0)+' · ∞'):l.mode==='unlimited'?(session?.turns||0)+' · ∞':(session?.turns||0)+' / '+l.count;
   $('limitProgress').textContent=progressOf(session);
   if(document.activeElement!==$('limitMode'))$('limitMode').value=l.mode;
   if(document.activeElement!==$('maxTurns'))$('maxTurns').value=l.count;
@@ -47,7 +52,7 @@ function paint(){
   $('limitNumberLabel').hidden=missionMode||l.mode==='unlimited';
   $('limitMode').disabled=missionMode||!id||other||saving;
   $('maxTurns').disabled=missionMode||!id||other||saving;
-  $('limitProgress').textContent=missionMode?(session?.turns||0)+' continuations · stops on Mission Signal (offline max 5) ':progressOf(session);
+  $('limitProgress').textContent=missionMode?(session?.turns||0)+(session?.missionCapEnabled?' / '+(session?.maxTurns||settings.maxTurns)+' safety cap':' continuations · stops on Mission Signal')+' · offline max 5':progressOf(session);
   const descriptions={ARMING:'Reading the current conversation…',OBSERVING:'Watching for the next finished reply.',GENERATING:'ChatGPT is working. Waiting for completion.',SETTLING:'Checking that the reply has finished.',READY:'Reply finished. Checking send safeguards.',SENDING:'Verifying continuation submission…',AWAITING_REPLY:'Continuation sent. Waiting for a reply.',RECOVERING:'Recovery requires your review.'};
   $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):'Automation is paused. Start when you are ready.';
   $('lastError').hidden=remoteDone||!session?.lastError;$('lastError').textContent=remoteDone?'':session?.lastError||'';$('openOwner').hidden=!other;
@@ -102,6 +107,12 @@ $('cancelMission').onclick=guard(async()=>{
 $('resumeMission').onclick=guard(async()=>{
   await ask({type:'RESUME_MISSION',id,tabId:tab.id});await wake(tab.id);await refresh();notify('Existing mission resumed.');
 });
+async function saveMissionCap(){
+  await ask({type:'SET_MISSION_CAP',id,tabId:tab.id,enabled:$('missionCap').checked,maxTurns:Number($('missionCapNumber').value)});
+  await refresh();notify('Mission safety cap saved.');
+}
+$('missionCap').addEventListener('change',guard(saveMissionCap));
+$('missionCapNumber').addEventListener('change',guard(saveMissionCap));
 $('missionConnectionForm').onsubmit=e=>{e.preventDefault();guard(async()=>{await ask({type:'SET_MISSION_CONNECTION',enrollment:$('enrollment').value});$('enrollment').value='';const c=await ask({type:'GET_MISSION_CONNECTION'});$('missionConfigured').textContent=c.configured?'Enrollment key saved.':'Enrollment key not configured.';notify('Connection saved.');})();};
 $('settingsForm').onsubmit=e=>{e.preventDefault();guard(async()=>{const next={};for(const k of ['settleSeconds','stallSeconds','watchdogSeconds'])next[k]=$(k).value;next.autoReload=$('autoReload').checked;await ask({type:'SET_SETTINGS',settings:next});await refresh();notify('Settings saved.');})();};
 async function renderTabs(expanded){
