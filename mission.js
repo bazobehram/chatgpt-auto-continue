@@ -13,7 +13,7 @@ globalThis.MissionSignal=(()=>{
     if(!response.ok)throw Error('Mission Signal request failed');
     return response.json();
   }
-  function verify(m,r,id){if(r.id!==m.id||r.conversation_id!==id||!['ACTIVE','COMPLETED'].includes(r.state))throw Error('Mission identity mismatch');}
+  function verify(m,r,id){if(r.id!==m.id||r.conversation_id!==id||!['ACTIVE','COMPLETED','CANCELLED'].includes(r.state))throw Error('Mission identity mismatch');}
   async function synchronize(id,force=false){
     let m=await get(id);if(m.mode!=='mission'||!m.id||!m.registered)return m;
     if(!force&&Date.now()-(m.lastChecked||0)<15000)return m;
@@ -24,7 +24,7 @@ globalThis.MissionSignal=(()=>{
   async function ensure(id){
     let m=await get(id);if(m.mode!=='mission')return m;
     if(m.instruction?.state==='claimed'||m.instruction?.state==='ambiguous')throw Error('Mission instruction submission is uncertain. Review the transcript before replacing the mission.');
-    if(!m.id||m.state==='COMPLETED'){
+    if(!m.id){
       const bytes=new Uint8Array(32);crypto.getRandomValues(bytes);
       m={mode:'mission',id:crypto.randomUUID(),readToken:Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join(''),state:'ACTIVE',registered:false,connection:'disconnected',offlineAttempts:0,instruction:{state:'pending'}};
       await put(id,m);
@@ -47,6 +47,7 @@ globalThis.MissionSignal=(()=>{
   async function beforeContinuation(id){
     const m=await synchronize(id,true);if(m.mode!=='mission')return {ok:true};
     if(m.state==='COMPLETED')return {ok:false,completed:true};
+    if(m.state==='CANCELLED')return {ok:false,error:'Mission was cancelled.'};
     if(!m.registered||m.instruction?.state!=='sent')return {ok:false,error:'Mission instruction must be confirmed before continuing.'};
     if(m.connection!=='connected'){
       if((m.offlineAttempts||0)>=5)return {ok:false,error:'Mission Signal disconnected. Five offline attempts exhausted.'};
@@ -54,7 +55,20 @@ globalThis.MissionSignal=(()=>{
     }
     return {ok:true};
   }
+  async function cancel(id){
+    const m=await get(id);
+    if(m.mode!=='mission'||!m.id)return m;
+    if(m.registered){
+      const r=await request('/v1/missions/'+m.id+'/cancel',m.readToken,'POST');
+      verify(m,r,id);
+      if(r.state!=='CANCELLED'&&r.state!=='COMPLETED')throw Error('Unexpected mission cancellation status');
+      const next={...m,state:r.state,connection:'connected',lastChecked:Date.now()};
+      await put(id,next);return next;
+    }
+    const next={...m,state:'CANCELLED',registered:false,connection:'connected'};
+    await put(id,next);return next;
+  }
   async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);await put(id,{...m,mode});}
   async function configure(enrollment){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:ENDPOINT,enrollment:String(enrollment||c.enrollment||'').trim()}});}
-  return {get,put,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,beforeContinuation,setMode,configure,ENDPOINT};
+  return {get,put,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
 })();
