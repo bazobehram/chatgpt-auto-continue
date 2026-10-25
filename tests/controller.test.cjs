@@ -232,3 +232,20 @@ test('important error notice survives refresh and activation without duplicate h
  await activate(h);h.restart();const after=await s(h);
  assert.equal(after.noticeHistory.length,1);assert.match(after.noticeHistory[0].reason,/Submission uncertain/);
 });
+
+
+test('optional Mission Signal cap cannot overwrite separate Local Only numeric preference',async()=>{
+ const {h}=await missionHarness();
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
+ await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:7});
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'mission'})).ok,true);
+ await h.rpc({type:'SET_MISSION_CAP',id:CHAT,tabId:10,enabled:true,maxTurns:13});
+ await activate(h);let current=(await s(h)).session;
+ assert.equal(current.maxTurns,13);assert.equal(current.missionMaxTurns,13);assert.equal(current.localMaxTurns,7);
+ await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
+ assert.equal((await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10})).ok,true);
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
+ await activate(h);current=(await s(h)).session;
+ assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,7);assert.equal(current.localMaxTurns,7);
+ assert.equal(current.missionMaxTurns,13);
+});
