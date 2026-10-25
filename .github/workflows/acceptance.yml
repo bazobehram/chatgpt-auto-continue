@@ -4,6 +4,9 @@ on:
     branches: [feature/mission-lifecycle-final]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: auto-continue-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
