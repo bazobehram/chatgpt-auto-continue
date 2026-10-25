@@ -12,8 +12,13 @@ const root=path.resolve(__dirname,'..');
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(__dirname,'mock_chat.html'),'utf8')}));
   await context.route('https://mission-signal.synovaq.org/**',async route=>{
    requests++;if(!online)return route.abort('connectionfailed');const req=route.request();let result;
-   if(req.method()==='POST'){const body=req.postDataJSON();result={id:body.id,conversation_id:body.conversation_id,state:'ACTIVE'};missions.set(body.id,result);}
-   else result=missions.get(req.url().split('/').at(-1));
+   if(req.method()==='POST'&&req.url().endsWith('/cancel')){
+     const id=req.url().split('/').at(-2),current=missions.get(id);
+     if(current?.state==='ACTIVE')current.state='CANCELLED';
+     result=current;
+   }else if(req.method()==='POST'){
+     const body=req.postDataJSON();result={id:body.id,conversation_id:body.conversation_id,state:'ACTIVE'};missions.set(body.id,result);
+   }else result=missions.get(req.url().split('/').at(-1));
    await route.fulfill({contentType:'application/json',body:JSON.stringify(result)});
   });
   const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker'),extensionId=worker.url().split('/')[2],popupUrl='chrome-extension://'+extensionId+'/popup.html';
@@ -73,6 +78,31 @@ const root=path.resolve(__dirname,'..');
    const id=(await status(b)).mission.id;missions.get(id).state='COMPLETED';await rpc({type:'MISSION_SYNC',id:b.id,force:true,generation:(await status(b)).session.generation}).then(async r=>{if(!r.ok)await control.evaluate(async t=>chrome.tabs.sendMessage(t,{type:'TICK'}),b.tabId);});
    // Force an owner-originated synchronization through a normal controller cycle after the cache expires.
    await b.page.waitForTimeout(15100);await tick(b);assert.equal((await status(b)).session.state,'COMPLETED');assert.equal((await status(c)).session.enabled,true);await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});
+  });
+  await check('Completed mission UI disables Start and retains evidence after New Mission and Local Only',async()=>{
+   await a.page.bringToFront();const popup=await context.newPage();popup.on('dialog',dialog=>dialog.accept());await a.page.bringToFront();await popup.goto(popupUrl);
+   await wait(async()=>await popup.locator('#status').textContent()==='Completed','completed badge');
+   assert.equal(await popup.locator('#toggleSession').isDisabled(),true);
+   assert.match(await popup.locator('#missionStatus').textContent(),/mission completed/);
+   const old=(await status(a)).mission.id;
+   await popup.locator('#newMission').click();
+   await wait(async()=>!(await status(a)).mission.id,'fresh mission prepared');
+   await wait(async()=>await popup.locator('#missionHistoryItems').textContent().then(t=>t.includes(old)),'completed history retained');
+   await popup.locator('#missionMode').selectOption('local');
+   await wait(async()=>await popup.locator('#missionMode').inputValue()==='local','Local Only selected');
+   assert.match(await popup.locator('#missionHistoryItems').textContent(),/COMPLETED/);
+   await popup.close();
+  });
+  await check('Cancel mission changes remote state, preserves history, and blocks abandoned mode switch',async()=>{
+   const c=await newChat();await instruction(c);
+   const denied=await rpc({type:'SET_MISSION_MODE',id:c.id,tabId:c.tabId,mode:'local'});assert.equal(denied.ok,false);
+   const previous=(await status(c)).mission.id;
+   const cancelled=await rpc({type:'CANCEL_MISSION',id:c.id,tabId:c.tabId});assert.equal(cancelled.ok,true);assert.equal(cancelled.state,'CANCELLED');assert.equal(missions.get(previous).state,'CANCELLED');
+   assert.equal((await status(c)).session.enabled,false);
+   assert.equal((await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:true})).ok,false);
+   assert.equal((await rpc({type:'NEW_MISSION',id:c.id,tabId:c.tabId})).ok,true);
+   assert.equal((await status(c)).missionHistory[0].id,previous);
+   assert.equal((await status(c)).missionHistory[0].state,'CANCELLED');
   });
   await check('Cleanup leaves no armed disposable controllers; connection checks occurred before sends',async()=>{
    for(const c of chats){await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});await c.page.close();assert.equal((await status(c)).session.enabled,false);}assert.ok(requests>15);
