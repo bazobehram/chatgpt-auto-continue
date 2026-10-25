@@ -54,7 +54,7 @@
     const turn=assistant?.closest('[data-talvt-turn-state]');
     const finalEvidence=turn?turn.getAttribute('data-talvt-turn-state')==='complete':Boolean(assistant?.getAttribute('data-complete')==='true'||assistant?.closest('[data-testid^="conversation-turn-"]')?.querySelector?.('[data-testid="copy-turn-action-button"], button[aria-label="Copy"], button[aria-label="Copy response"]'));
     const busy=stop||streaming||Boolean(turn&&turn.getAttribute('data-talvt-turn-state')!=='complete');
-    return {assistantKey,assistantSig,assistantText,renderFailed,userKey,userText:(user?.innerText||user?.textContent||'').trim(),userCount:users.length,lastRole,busy,finalEvidence,editor,editorText,submit};
+    return {assistantKey,assistantSig,assistantText,renderFailed,userKey,userText:(user?.innerText||user?.textContent||'').trim(),userMessages:users.slice(-200).map(e=>({text:(e.innerText||e.textContent||'').trim(),key:identity(e)})),userCount:users.length,lastRole,busy,finalEvidence,editor,editorText,submit};
   }
   function reset(s){
     lastSig=s.assistantSig;changedAt=now();lastProgressSig=s.assistantSig;lastProgressAt=now();
@@ -82,8 +82,10 @@
       sessionGeneration=sess?.generation||null;
       if(sess?.enabled&&res.callerTabId!==undefined&&sess.ownerTabId!==res.callerTabId)return;
       if(activeId!==id){activeId=id;activationGeneration=null;lastState='';reset(s);}
-      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&s.userText){
-        await send({type:'RECONCILE_INSTRUCTION',id,userText:s.userText,userKey:s.userKey,userCount:s.userCount});
+      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&mission.id){
+        const expected=`Mission Signal instruction (one time). Mission ID: ${mission.id}.`;
+        const matching=s.userMessages?.find(e=>e.text.startsWith(expected));
+        if(matching)await send({type:'RECONCILE_INSTRUCTION',id,userText:matching.text,userKey:matching.key,userCount:s.userCount});
       }
       if(!sess?.enabled){activationGeneration=null;lastState='';reset(s);return;}
       if(mission?.mode==='mission'){
