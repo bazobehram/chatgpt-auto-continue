@@ -44,6 +44,12 @@ globalThis.MissionSignal=(()=>{
     return {token,message:instruction(m.id)};
   }
   async function acknowledgeInstruction(id,token){const m=await get(id);if(m.instruction?.token!==token||m.instruction.state!=='claimed')return false;await put(id,{...m,instruction:{...m.instruction,state:'sent',sentAt:Date.now()}});return true;}
+  async function releaseUnsentInstruction(id,token){
+    const m=await get(id);
+    if(m.mode!=='mission'||m.instruction?.state!=='claimed'||m.instruction.token!==token)return false;
+    await put(id,{...m,instruction:{state:'pending',recoveryRequired:true}});
+    return true;
+  }
   async function beforeContinuation(id){
     const m=await synchronize(id,true);if(m.mode!=='mission')return {ok:true};
     if(m.state==='COMPLETED')return {ok:false,completed:true};
@@ -70,5 +76,5 @@ globalThis.MissionSignal=(()=>{
   }
   async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);await put(id,{...m,mode});}
   async function configure(enrollment){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:ENDPOINT,enrollment:String(enrollment||c.enrollment||'').trim()}});}
-  return {get,put,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
+  return {get,put,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
 })();
