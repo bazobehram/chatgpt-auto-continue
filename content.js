@@ -68,7 +68,7 @@
       sessionGeneration=sess?.generation||null;
       if(sess?.enabled&&res.callerTabId!==undefined&&sess.ownerTabId!==res.callerTabId)return;
       if(activeId!==id){activeId=id;activationGeneration=null;lastState='';reset(s);}
-      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&s.lastRole==='user'&&s.userText){
+      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&s.userText){
         await send({type:'RECONCILE_INSTRUCTION',id,userText:s.userText,userKey:s.userKey,userCount:s.userCount});
       }
       if(!sess?.enabled){activationGeneration=null;lastState='';reset(s);return;}
