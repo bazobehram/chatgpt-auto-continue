@@ -94,6 +94,7 @@ test('acknowledgment must match the submitted message, not an unrelated new user
 async function missionHarness(){
  const h=harness(),remote={online:true,state:'ACTIVE',missions:new Map(),calls:[]};
  h.setFetch(async(url,options)=>{remote.calls.push(url);if(!remote.online)throw Error('Controlled outage');
+  if(options.method==='POST'&&url.endsWith('/cancel')){const id=url.split('/').at(-2),body=remote.missions.get(id);if(remote.state==='ACTIVE')remote.state='CANCELLED';return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};}
   if(options.method==='POST'){const body=JSON.parse(options.body);remote.missions.set(body.id,body);return {ok:true,json:async()=>({id:body.id,conversation_id:body.conversation_id,state:remote.state})};}
   const id=url.split('/').at(-1),body=remote.missions.get(id);return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};
  });
@@ -149,4 +150,31 @@ test('registration retry cannot inherit an unrelated prior Local Only count or j
  const {h,remote}=await missionHarness();h.storage['chat:'+CHAT]={enabled:false,state:'PAUSED',turns:99,limitMode:'limited',maxTurns:2,lastClaim:{token:'unrelated-local-claim'}};
  remote.online=false;assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);const id=h.storage['mission:'+CHAT].id;
  remote.online=true;await activate(h);const after=await s(h);assert.equal(after.mission.id,id);assert.equal(after.session.missionId,id);assert.equal(after.session.turns,0);assert.equal(after.session.lastClaim,null);
+});
+
+
+test('cancel mission changes remote state and blocks old mission restart',async()=>{
+ const {h,remote}=await missionHarness();await deliverInstruction(h);
+ const result=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});
+ assert.equal(result.ok,true);assert.equal(result.state,'CANCELLED');assert.equal(remote.state,'CANCELLED');
+ assert.equal((await s(h)).session.enabled,false);
+ const retry=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true});assert.equal(retry.ok,false);
+ const newMission=await h.rpc({type:'NEW_MISSION',id:CHAT,tabId:10});assert.equal(newMission.ok,true);
+ assert.equal((await s(h)).mission.id,null);
+});
+
+test('failed cancellation remains fail-closed without claiming success',async()=>{
+ const {h,remote}=await missionHarness();await deliverInstruction(h);remote.online=false;
+ const result=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});
+ assert.equal(result.ok,false);assert.equal(remote.state,'ACTIVE');
+ assert.equal((await s(h)).mission.state,'ACTIVE');
+});
+
+test('Mission Signal defaults unlimited and preserves Local Only cap on mode switch',async()=>{
+ const {h}=await missionHarness();await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:20});
+ await h.rpc({type:'SET_MISSION_CAP',id:CHAT,tabId:10,enabled:false,maxTurns:20});
+ await activate(h);let current=(await s(h)).session;assert.equal(current.limitMode,'unlimited');assert.equal(current.maxTurns,20);
+ await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ await activate(h);current=(await s(h)).session;assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,20);
 });
