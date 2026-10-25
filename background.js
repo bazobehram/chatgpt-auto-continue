@@ -50,7 +50,7 @@ async function dispatch(m,sender){
         if(current&&current.state!==remote.state)await pause(m.id,remote.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',remote.state==='COMPLETED'?'COMPLETED':'PAUSED');
       });
     }
-    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),version:VERSION};
+    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),version:VERSION};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){await MissionSignal.configure(m.enrollment);return {ok:true};}
