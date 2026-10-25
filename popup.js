@@ -19,6 +19,7 @@ async function probe(tabId,chatId,s){
   }catch{return null;}finally{clearTimeout(timer);}
 }
 function statusOf(s,runtime,m){
+  if(m?.mode==='mission'&&m.state==='CANCELLED')return 'Cancelled';
   if(!s?.enabled){if(s?.state==='COMPLETED')return 'Completed';if(['NEEDS_USER','ERROR'].includes(s?.state))return 'Needs attention';return s?.state==='PAUSED'?'Paused':'Off';}
   if(!runtime)return 'Needs attention';if(m?.mode==='mission'&&m.connection==='disconnected')return 'Recovery';if(runtime.busy)return 'Generating';
   return {ARMING:'Checking',GENERATING:'Generating',SETTLING:'Settling',READY:'Ready',SENDING:'Sending',AWAITING_REPLY:'Waiting',RECOVERING:'Recovering'}[s.state]||'Running';
@@ -30,7 +31,7 @@ function sourceLabel(){
 function paint(){
   const on=active(),other=occupied(),state=session?.state||'IDLE',status=statusOf(session,health,mission),l=limitOf(session),remoteDone=mission?.mode==='mission'&&mission.state==='COMPLETED';
   $('missionMode').value=mission?.mode||'local';$('missionMode').disabled=!id||Boolean(session?.enabled)||saving;
-  $('missionStatus').textContent=mission?.mode!=='mission'?'Local Only · no server required':remoteDone?'Connected · mission completed':mission.connection==='disconnected'?'Disconnected · '+(mission.offlineAttempts||0)+'/5':mission.id?'Connected · '+(mission.instructionState==='sent'?'instruction delivered':mission.instructionState==='claimed'?'instruction needs review':'instruction pending'):'Mission registers when started';
+  $('missionStatus').textContent=mission?.mode!=='mission'?'Local Only · no server required':remoteDone?'Connected · mission completed':mission.state==='CANCELLED'?'Mission cancelled':mission.connection==='disconnected'?'Disconnected · '+(mission.offlineAttempts||0)+'/5':mission.id?'Connected · '+(mission.instructionState==='sent'?'instruction delivered':mission.instructionState==='claimed'?'instruction needs review':'instruction pending'):'Mission registers when started';
   $('missionIdentity').hidden=!mission?.id;$('missionIdentity').textContent=mission?.id?'Mission '+mission.id:'';
   $('newMission').hidden=mission?.mode!=='mission'||!mission?.id||Boolean(session?.enabled);$('newMission').disabled=saving;
   $('missionActions').hidden=mission?.mode!=='mission'||!mission?.id;
@@ -54,9 +55,9 @@ function paint(){
   $('maxTurns').disabled=missionMode||!id||other||saving;
   $('limitProgress').textContent=missionMode?(session?.turns||0)+(session?.missionCapEnabled?' / '+(session?.maxTurns||settings.maxTurns)+' safety cap':' continuations · stops on Mission Signal')+' · offline max 5':progressOf(session);
   const descriptions={ARMING:'Reading the current conversation…',OBSERVING:'Watching for the next finished reply.',GENERATING:'ChatGPT is working. Waiting for completion.',SETTLING:'Checking that the reply has finished.',READY:'Reply finished. Checking send safeguards.',SENDING:'Verifying continuation submission…',AWAITING_REPLY:'Continuation sent. Waiting for a reply.',RECOVERING:'Recovery requires your review.'};
-  $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):'Automation is paused. Start when you are ready.';
+  $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':mission?.state==='CANCELLED'?'Mission cancelled. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):'Automation is paused. Start when you are ready.';
   $('lastError').hidden=remoteDone||!session?.lastError;$('lastError').textContent=remoteDone?'':session?.lastError||'';$('openOwner').hidden=!other;
-  $('toggleSession').disabled=!id||other||saving||remoteDone;$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':'Start';$('toggleSession').classList.toggle('danger',on);
+  $('toggleSession').disabled=!id||other||saving||remoteDone||(mission?.mode==='mission'&&mission.state==='CANCELLED');$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':'Start';$('toggleSession').classList.toggle('danger',on);
   $('kickoff').disabled=!on||!health||health.busy||state!=='OBSERVING'||Boolean(session?.lastClaim)||Boolean(session?.kickoffRequested)||(mission?.mode==='mission'&&mission.instructionState!=='sent')||saving;
   $('message').disabled=(other&&scope!=='global')||(scope!=='global'&&!id);sourceLabel();
 }
