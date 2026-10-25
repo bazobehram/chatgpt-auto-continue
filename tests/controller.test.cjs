@@ -212,3 +212,23 @@ test('cannot switch from active registered Mission Signal to Local Only without 
  assert.equal(result.ok,false);assert.match(result.error,/Cancel the active mission/);
  assert.equal((await s(h)).mission.mode,'mission');
 });
+
+
+test('Local Only completion remains in activity history after starting a fresh session',async()=>{
+ const h=harness();await activate(h);
+ const done=await h.rpc({type:'PAUSE',id:CHAT,reason:'Roadmap completion detected.',state:'COMPLETED'},h.owner);
+ assert.equal(done.ok,true);let result=await s(h);
+ assert.equal(result.session.state,'COMPLETED');assert.equal(result.noticeHistory.length,1);
+ assert.equal(result.noticeHistory[0].mode,'local');assert.equal(result.noticeHistory[0].state,'COMPLETED');
+ assert.match(result.noticeHistory[0].reason,/Roadmap completion/);
+ await activate(h);h.restart();result=await s(h);
+ assert.equal(result.noticeHistory.length,1);assert.equal(result.noticeHistory[0].state,'COMPLETED');
+});
+
+test('important error notice survives refresh and activation without duplicate history',async()=>{
+ const h=harness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Submission uncertain: no acknowledgment.',state:'PAUSED'},h.owner);
+ const before=await s(h);assert.equal(before.noticeHistory.length,1);
+ await activate(h);h.restart();const after=await s(h);
+ assert.equal(after.noticeHistory.length,1);assert.match(after.noticeHistory[0].reason,/Submission uncertain/);
+});
