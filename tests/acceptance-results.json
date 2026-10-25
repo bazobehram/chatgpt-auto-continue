@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-25T19:15:22.387Z",
+  "environment": "isolated Chromium; intercepted ChatGPT fixtures; real MV3 runtime",
+  "results": [
+    {
+      "name": "1 Duplicate-tab ownership: one sender",
+      "status": "PASS"
+    },
+    {
+      "name": "2 Different conversations: independent messages, counters, journals and pause",
+      "status": "PASS"
+    },
+    {
+      "name": "3 Refresh during generation: disarmed without continuation",
+      "status": "PASS"
+    },
+    {
+      "name": "4 Refresh after completed response: prior continuation not replayed",
+      "status": "PASS"
+    },
+    {
+      "name": "5 Owner closure and reopening: paused, settings and journal restored",
+      "status": "PASS"
+    },
+    {
+      "name": "6 Real service-worker stop/restart: persisted journal and no replay",
+      "status": "PASS"
+    },
+    {
+      "name": "7 Actual popup: correct conversation and live generating/paused/counter state",
+      "status": "PASS"
+    },
+    {
+      "name": "Cleanup: no armed disposable sessions, no remaining QA tabs, no page errors",
+      "status": "PASS"
+    }
+  ]
+}

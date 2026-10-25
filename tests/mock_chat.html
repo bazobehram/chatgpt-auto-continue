@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Test-only ChatGPT DOM simulator</title></head><body>
+<main id="thread"><div data-message-author-role="user" data-message-id="user-1">Old user message</div><div data-message-author-role="assistant" data-message-id="assistant-1" data-complete="true">Old assistant response</div></main>
+<div id="composer"><textarea id="prompt-textarea" placeholder="Message"></textarea><button id="send" data-testid="send-button" aria-label="Send prompt" disabled>Send</button><button id="stop" data-testid="stop-button" aria-label="Stop generating" hidden>Stop</button></div>
+<script>
+let index=1; const thread=document.getElementById('thread'), editor=document.getElementById('prompt-textarea'),send=document.getElementById('send'),stop=document.getElementById('stop');
+window.historyLog=[];
+function append(role,text){const el=document.createElement('div');el.setAttribute('data-message-author-role',role);if(role==='assistant')el.setAttribute('data-complete','true');el.setAttribute('data-message-id',`${role}-${++index}`);el.textContent=text;thread.append(el);return el;}
+function user(text){return append('user',text);}
+function assistant(text,stream=false){const el=append('assistant',text);stop.hidden=!stream;window.currentAssistant=el;return el;}
+function finish(text){if(window.currentAssistant)window.currentAssistant.textContent=text;stop.hidden=true;}
+function draft(text){editor.value=text;editor.dispatchEvent(new Event('input',{bubbles:true}));}
+editor.addEventListener('input',()=>{send.disabled=!editor.value.trim();});
+send.addEventListener('click',()=>{if(send.disabled)return;let text=editor.value;window.historyLog.push(text);editor.value='';send.disabled=true;if(window.ackDelay)setTimeout(()=>user(text),window.ackDelay);else user(text);stop.hidden=false;window.currentAssistant=null;if(window.autorespond){window.setTimeout(()=>{assistant(window.autorespond.pop()||'Done.',false);},Number(window.respondDelay||60));}});
+window.mock={user,assistant,finish,draft,get sent(){return [...window.historyLog]},setRespond:(arr,delay=60)=>{window.autorespond=[...arr].reverse();window.respondDelay=delay;},setBusy:on=>{stop.hidden=!on;},state:()=>({sent:window.historyLog,assistant:[...document.querySelectorAll('[data-message-author-role=assistant]')].map(e=>e.textContent)})};
+</script></body></html>

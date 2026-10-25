@@ -1,0 +1,17 @@
+{
+  "name": "chatgpt-auto-continue",
+  "version": "0.5.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/controller.test.cjs",
+    "test:browser": "node tests/browser.test.cjs",
+    "test:acceptance": "node tests/acceptance.test.cjs",
+    "test:all": "node tests/run-all.cjs",
+    "test:limits": "node tests/limits.test.cjs",
+    "test:mission": "node tests/mission.test.cjs",
+    "test:service": "python -m pytest mission-signal/tests -q"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

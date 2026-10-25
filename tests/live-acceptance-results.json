@@ -1,0 +1,231 @@
+{
+  "version": "0.4.2",
+  "checks": [
+    {
+      "name": "Existing extension reload",
+      "status": "PASS",
+      "evidence": "Chrome extension details showed 0.4.2 for nieinjacjejclbomhndjaabjnpjnbapf"
+    },
+    {
+      "name": "Unlimited selection and counter preservation",
+      "status": "PASS",
+      "evidence": "QA B changed Limited 20 to Unlimited; existing count stayed 5; engine remained Off."
+    },
+    {
+      "name": "Multiple running conversations and independent modes",
+      "status": "PASS",
+      "evidence": "QA A Running Limited 2, QA B Running Unlimited in overview; starting B did not change active tab 616234344 or A count."
+    },
+    {
+      "name": "Tab switching, popup reopening, title focus and per-chat persistence",
+      "status": "PASS",
+      "evidence": "Overview title focused exact QA B tab 616234357. Reopened B remained Running Unlimited 0; A remained separate Limited 2."
+    },
+    {
+      "name": "Independent background sends and counters",
+      "status": "PASS",
+      "evidence": {
+        "A": [
+          {
+            "id": "7c5bd963-4f1c-49f7-be8a-c2d232f05669",
+            "text": "Disposable QA A background send check. Reply exactly QA next."
+          },
+          {
+            "id": "5124605e-cfdb-40e5-8f9e-16fc1372886d",
+            "text": "QA custom"
+          },
+          {
+            "id": "f121de18-63c2-4db6-9cb8-c89d0d452c97",
+            "text": "QA custom"
+          }
+        ],
+        "B": [
+          {
+            "id": "ec5a807b-5c79-43f6-ae26-5d0993f83c74",
+            "text": "Disposable QA B send check. Reply exactly QA B ready."
+          },
+          {
+            "id": "84e16a8e-15ea-49ba-9c49-00e11b08d2bd",
+            "text": "go"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Live service-worker restart",
+      "result": "PASS",
+      "evidence": "Exact Auto-Continue scope Stop activated; renderer process changed from 30148 to 31100, worker reawakened by existing controller.",
+      "status": "PASS"
+    },
+    {
+      "name": "Restart recovery operational status",
+      "result": "PASS",
+      "evidence": "A popup after live worker process replacement remains Running, QA custom, Limited 2, counter0; no Start pressed.",
+      "status": "PASS"
+    },
+    {
+      "name": "Final v0.4.2 duplicate ownership",
+      "result": "PASS",
+      "evidence": "Same conversation tabs344/367; duplicate says Other tab, cannot send; Start, Send once, settings disabled; logical count unchanged4.",
+      "status": "PASS"
+    },
+    {
+      "name": "Post-restart bounded send with duplicate open",
+      "result": "PASS",
+      "evidence": [
+        {
+          "id": "13463fe6-aa87-4bbf-9bc9-6154a0e6b47f",
+          "role": "user",
+          "text": "Disposable final QA after worker restart. Reply exactly QA next.",
+          "turnState": "complete"
+        },
+        {
+          "id": "47e60005-52db-4294-910c-3b56def52dcd",
+          "role": "assistant",
+          "text": "ChatGPT said:\n\nQA next",
+          "turnState": "complete"
+        },
+        {
+          "id": "eb995a08-5d65-490f-b489-a7787baba9fc",
+          "role": "user",
+          "text": "QA custom",
+          "turnState": "complete"
+        },
+        {
+          "id": "824676ec-6f0b-4208-9635-b67fbec5cf31",
+          "role": "assistant",
+          "text": "ChatGPT said:\n\nQA next",
+          "turnState": "complete"
+        },
+        {
+          "id": "80b1ffba-6127-4a52-aabb-597f77eb9dce",
+          "role": "user",
+          "text": "QA custom",
+          "turnState": "complete"
+        },
+        {
+          "id": "763313d6-1b46-4be4-8804-7b2e14094eb6",
+          "role": "assistant",
+          "text": "ChatGPT said:\n\nQA next",
+          "turnState": "complete"
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "name": "Pause one without stopping another",
+      "result": "PASS",
+      "evidence": "B popup Running0/1 after overview paused A; A row Paused0/2; B then receives new manual QA prompt.",
+      "status": "PASS"
+    },
+    {
+      "name": "B continues after independent A pause",
+      "result": "PASS",
+      "evidence": [
+        {
+          "id": "c84064fb-2d62-489e-9aca-bb0a326b33ce",
+          "role": "user",
+          "text": "Disposable QA after independent pause. Reply exactly QA B ready.",
+          "turnState": "complete"
+        },
+        {
+          "id": "432cac8a-d41e-4a9d-83e6-83574dd88738",
+          "role": "assistant",
+          "text": "ChatGPT said:\n\nQA B ready.",
+          "turnState": "complete"
+        },
+        {
+          "id": "4da631b0-dd22-4836-bfa3-98f29abc35d8",
+          "role": "user",
+          "text": "go",
+          "turnState": "complete"
+        },
+        {
+          "id": "a9523346-aed2-4b42-b5ec-8ff44167d15f",
+          "role": "assistant",
+          "text": "ChatGPT said:\n\nQA B ready.",
+          "turnState": "complete"
+        }
+      ],
+      "status": "PASS"
+    },
+    {
+      "name": "Final detached renderer error safety",
+      "result": "PASS",
+      "evidence": "Existing v0.4.2 reloaded; Start against matching failed renderer immediately Paused0/1 with new specific latest-response warning, Send once disabled.",
+      "status": "PASS"
+    },
+    {
+      "name": "Live genuine completion and warning recovery",
+      "result": "PASS",
+      "evidence": "Fresh reply All tasks are complete; after explicit Send once controller COMPLETED0/1, no user go appended. Resolved prior renderer warning cleared when new healthy reply resumed.",
+      "status": "PASS"
+    },
+    {
+      "name": "All QA runtime states verified paused",
+      "result": "PASS",
+      "evidence": "B primary Paused1/1 and disabled Send once; overview A Paused2/2 Start, C Paused1/1 Start. Important rows Off/Paused unchanged.",
+      "status": "PASS"
+    },
+    {
+      "name": "Final active owner close and restoration",
+      "result": "PASS",
+      "evidence": "C verified Running0/1, owner376 closed; reopened379 shows Paused0/1 Owner tab closed, same go and Limited1, Send once disabled; no Start on reopen.",
+      "status": "PASS"
+    },
+    {
+      "name": "Final cleanup",
+      "result": "PASS",
+      "evidence": "A user tab344 left open Paused with Start and disabled Send once. B357 and C379 closed only after verified disabled. Duplicate367 diagnostic366 and intermediate C372/376 closed. Metadata confirms only user QA344 remains.",
+      "status": "PASS"
+    },
+    {
+      "name": "Authenticated long background tool beyond stall threshold",
+      "result": "PASS",
+      "evidence": {
+        "elapsedSeconds": 78,
+        "stallSeconds": 60,
+        "foreground": "QA A paused",
+        "background": "QA C Generating0/1; one Analyzed and one Analyzing tool; Stop present",
+        "prematureContinuations": 0
+      },
+      "status": "PASS"
+    },
+    {
+      "name": "Authenticated long-tool completion and warning accuracy",
+      "result": "PASS",
+      "evidence": {
+        "turns": [
+          {
+            "id": "df9d316a-f8c8-466f-bb25-daf1a058f080",
+            "role": "user",
+            "text": "Disposable QA long-tool test. Use Python execution for TWO separate tool calls in sequence. Each call should run import time; t=time.monotonic(); time.sleep(45); print(round(time.monotonic()-t)). Each call is safely under the tool 60-second limit. Do not combine the sleeps into one call. Do not write any final response until both tool calls finish. Then report both actual measured results and say All tasks are complete. No files, network or connected apps.",
+            "turnState": "complete"
+          },
+          {
+            "id": "e2faa490-82d9-41c0-a152-f759f6d91b88",
+            "role": "assistant",
+            "text": "ChatGPT said:\n\nDisposable QA long-tool test: PASS ✅\n\nPython call 1: 45 seconds\n\nPython call 2: 45 seconds\n\nTotal measured duration: 90 seconds\n\nExecution: Two separate sequential tool calls\n\nErrors: None\n\nBoth calls completed successfully.\n\nAll tasks are complete.",
+            "turnState": "complete"
+          }
+        ],
+        "finalState": "Completed0/1; roadmap completion; disabled Send once; no false stalled warning",
+        "configuredStallSeconds": 60,
+        "observationElapsedSeconds": 123
+      },
+      "status": "PASS"
+    },
+    {
+      "name": "Post-tool restoration and cleanup",
+      "result": "PASS",
+      "evidence": "Stall timeout restored and saved180; settle6 watchdog30 recovery unchecked preserved. C Completed0/1 disabled Send once before close.",
+      "status": "PASS"
+    }
+  ],
+  "qaTabs": [
+    616234344,
+    616234357
+  ],
+  "recordedAt": "2026-10-25T12:10:59.973Z",
+  "cleanup": "All known disposable controllers disabled. Only user QA A remains open and Paused. Original stall180 restored."
+}

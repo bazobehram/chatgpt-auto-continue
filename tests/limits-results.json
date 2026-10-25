@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-25T19:17:16.145Z",
+  "version": "0.5.0",
+  "environment": "isolated real Chromium with local fixtures",
+  "results": [
+    {
+      "name": "Main limit UI defaults Limited; no duplicate limit in Advanced; real title preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "Background-tab send with custom message; popup is not the runtime owner",
+      "status": "PASS"
+    },
+    {
+      "name": "Unlimited selection preserves count and journal, and exceeds Limited threshold",
+      "status": "PASS"
+    },
+    {
+      "name": "Mode switching, tab switching and popup reopening preserve limits and counters",
+      "status": "PASS"
+    },
+    {
+      "name": "Overview starts/pauses another conversation without focusing or resetting A",
+      "status": "PASS"
+    },
+    {
+      "name": "Long-running background tool remains active beyond stall timeout without stale warning",
+      "status": "PASS"
+    },
+    {
+      "name": "Unlimited never bypasses approval, roadmap completion or usage-limit stops",
+      "status": "PASS"
+    },
+    {
+      "name": "Operational status never reports Running for a paused/unreachable controller",
+      "status": "PASS"
+    },
+    {
+      "name": "Detached failed-response renderer pauses only its matching latest message",
+      "status": "PASS"
+    },
+    {
+      "name": "Limited lowering stops safely without resetting attempts; no QA session remains armed",
+      "status": "PASS"
+    }
+  ]
+}

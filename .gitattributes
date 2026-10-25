@@ -1,0 +1,9 @@
+* text=auto
+*.js text eol=lf
+*.cjs text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+mission-signal/mission-signal text eol=lf
+mission-signal/Dockerfile text eol=lf
+*.png binary
