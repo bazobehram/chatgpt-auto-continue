@@ -33,6 +33,9 @@ function paint(){
   $('missionStatus').textContent=mission?.mode!=='mission'?'Local Only · no server required':remoteDone?'Connected · mission completed':mission.connection==='disconnected'?'Disconnected · '+(mission.offlineAttempts||0)+'/5':mission.id?'Connected · '+(mission.instructionState==='sent'?'instruction delivered':mission.instructionState==='claimed'?'instruction needs review':'instruction pending'):'Mission registers when started';
   $('missionIdentity').hidden=!mission?.id;$('missionIdentity').textContent=mission?.id?'Mission '+mission.id:'';
   $('newMission').hidden=mission?.mode!=='mission'||!mission?.id||Boolean(session?.enabled);$('newMission').disabled=saving;
+  $('missionActions').hidden=mission?.mode!=='mission'||!mission?.id;
+  $('resumeMission').disabled=Boolean(session?.enabled)||other||saving||remoteDone||mission?.state==='CANCELLED'||mission?.instructionState!=='sent';
+  $('cancelMission').disabled=other||saving||remoteDone||mission?.state==='CANCELLED';
   $('status').textContent=other&&health?'Other tab':status;
   $('status').className='badge '+(['Needs attention','Recovery'].includes(status)?'attention':session?.enabled&&health?'running':status==='Paused'?'paused':'');
   $('turns').textContent=mission?.mode==='mission'?(session?.turns||0)+' · ∞':l.mode==='unlimited'?(session?.turns||0)+' · ∞':(session?.turns||0)+' / '+l.count;
@@ -47,7 +50,7 @@ function paint(){
   $('limitProgress').textContent=missionMode?(session?.turns||0)+' continuations · stops on Mission Signal (offline max 5) ':progressOf(session);
   const descriptions={ARMING:'Reading the current conversation…',OBSERVING:'Watching for the next finished reply.',GENERATING:'ChatGPT is working. Waiting for completion.',SETTLING:'Checking that the reply has finished.',READY:'Reply finished. Checking send safeguards.',SENDING:'Verifying continuation submission…',AWAITING_REPLY:'Continuation sent. Waiting for a reply.',RECOVERING:'Recovery requires your review.'};
   $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):'Automation is paused. Start when you are ready.';
-  $('lastError').hidden=!session?.lastError;$('lastError').textContent=session?.lastError||'';$('openOwner').hidden=!other;
+  $('lastError').hidden=remoteDone||!session?.lastError;$('lastError').textContent=remoteDone?'':session?.lastError||'';$('openOwner').hidden=!other;
   $('toggleSession').disabled=!id||other||saving||remoteDone;$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':'Start';$('toggleSession').classList.toggle('danger',on);
   $('kickoff').disabled=!on||!health||health.busy||state!=='OBSERVING'||Boolean(session?.lastClaim)||Boolean(session?.kickoffRequested)||(mission?.mode==='mission'&&mission.instructionState!=='sent')||saving;
   $('message').disabled=(other&&scope!=='global')||(scope!=='global'&&!id);sourceLabel();
@@ -88,10 +91,16 @@ $('kickoff').onclick=guard(async()=>{await saveMessage();await ask({type:'REQUES
 $('openOwner').onclick=guard(()=>focusTab(session.ownerTabId));
 $('missionMode').onchange=guard(async()=>{await ask({type:'SET_MISSION_MODE',id,tabId:tab.id,mode:$('missionMode').value});await refresh();notify('Completion mode saved.');});
 $('newMission').onclick=guard(async()=>{
-  if(!confirm('Discard this mission locally and prepare a new one? The old remote mission will NOT be marked completed or cancelled. Clear any old instruction draft before Start.'))return;
-  await ask({type:'NEW_MISSION',id,tabId:tab.id});
-  await refresh();
-  notify('Previous mission detached locally. Clear old drafts and press Start for a new mission.');
+  if(mission?.state==='ACTIVE'){notify('Cancel the active mission first to prevent an orphan mission.',true);return;}
+  if(!confirm('Create a new mission? Review the transcript and clear any old instruction draft before Start.'))return;
+  await ask({type:'NEW_MISSION',id,tabId:tab.id});await refresh();notify('New mission prepared.');
+});
+$('cancelMission').onclick=guard(async()=>{
+  if(!confirm('Cancel this Mission Signal on homeserver and stop its automation? This cannot be resumed.'))return;
+  await ask({type:'CANCEL_MISSION',id,tabId:tab.id});await refresh();notify('Mission cancellation confirmed.');
+});
+$('resumeMission').onclick=guard(async()=>{
+  await ask({type:'RESUME_MISSION',id,tabId:tab.id});await wake(tab.id);await refresh();notify('Existing mission resumed.');
 });
 $('missionConnectionForm').onsubmit=e=>{e.preventDefault();guard(async()=>{await ask({type:'SET_MISSION_CONNECTION',enrollment:$('enrollment').value});$('enrollment').value='';const c=await ask({type:'GET_MISSION_CONNECTION'});$('missionConfigured').textContent=c.configured?'Enrollment key saved.':'Enrollment key not configured.';notify('Connection saved.');})();};
 $('settingsForm').onsubmit=e=>{e.preventDefault();guard(async()=>{const next={};for(const k of ['settleSeconds','stallSeconds','watchdogSeconds'])next[k]=$(k).value;next.autoReload=$('autoReload').checked;await ask({type:'SET_SETTINGS',settings:next});await refresh();notify('Settings saved.');})();};
