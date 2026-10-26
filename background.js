@@ -73,7 +73,14 @@ async function dispatch(m,sender){
     return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),noticeHistory:await noticeHistory(m.id),version:VERSION};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
-  if(m.type==='SET_MISSION_CONNECTION'){await MissionSignal.configure(m.enrollment);return {ok:true};}
+  if(m.type==='SET_MISSION_CONNECTION'){
+    const c=await MissionSignal.connection();
+    const candidate=String(m.enrollment||'').trim()||c.enrollment;
+    if(!candidate)throw Error('Enter an enrollment key.');
+    await MissionSignal.verifyEnrollment(candidate);
+    if(String(m.enrollment||'').trim())await MissionSignal.configure(candidate);
+    return {ok:true,verified:true};
+  }
   if(m.type==='CANCEL_MISSION'){
     if(!validId(m.id))throw Error('Open a saved conversation first.');
     const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
