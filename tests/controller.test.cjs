@@ -94,6 +94,7 @@ test('acknowledgment must match the submitted message, not an unrelated new user
 async function missionHarness(){
  const h=harness(),remote={online:true,state:'ACTIVE',missions:new Map(),calls:[]};
  h.setFetch(async(url,options)=>{remote.calls.push(url);if(!remote.online)throw Error('Controlled outage');
+  if(options.method==='POST'&&url.endsWith('/enrollment/verify'))return {ok:true,json:async()=>({configured:true})};
   if(options.method==='POST'&&url.endsWith('/cancel')){const id=url.split('/').at(-2),body=remote.missions.get(id);if(remote.state==='ACTIVE')remote.state='CANCELLED';return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};}
   if(options.method==='POST'){const body=JSON.parse(options.body);remote.missions.set(body.id,body);return {ok:true,json:async()=>({id:body.id,conversation_id:body.conversation_id,state:remote.state})};}
   const id=url.split('/').at(-1),body=remote.missions.get(id);return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};
