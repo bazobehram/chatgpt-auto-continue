@@ -167,7 +167,10 @@ test('failed cancellation remains fail-closed without claiming success',async()=
  const {h,remote}=await missionHarness();await deliverInstruction(h);remote.online=false;
  const result=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});
  assert.equal(result.ok,false);assert.equal(remote.state,'ACTIVE');
- assert.equal((await s(h)).mission.state,'ACTIVE');
+ const snapshot=await s(h);
+ assert.equal(snapshot.mission.state,'ACTIVE');
+ assert.equal(snapshot.session.enabled,false);
+ assert.match(snapshot.session.lastError,/remote cancellation was not confirmed/);
 });
 
 test('Mission Signal defaults unlimited and preserves Local Only cap on mode switch',async()=>{
