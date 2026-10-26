@@ -42,7 +42,7 @@ function paint(){
     const row=document.createElement('div');row.className='mission-history-row';
     const when=Number.isFinite(entry.recordedAt)?new Date(entry.recordedAt).toLocaleString():'';
     const source=entry.kind==='notice'?(entry.mode==='mission'?'Mission Signal':'Local Only'):'Mission Signal';
-    const detail=entry.kind==='notice'?(entry.reason||''):(entry.id||'');
+    const detail=entry.kind==='notice'?([entry.missionId,entry.reason].filter(Boolean).join(' · ')):(entry.id||'');
     row.textContent=`${source} · ${entry.state} · ${when}${detail?' · '+detail:''}`;
     row.title=entry.missionId||entry.id||'';
     return row;
