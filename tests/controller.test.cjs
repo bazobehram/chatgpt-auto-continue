@@ -28,7 +28,7 @@ function harness(){
 function message(role,txt,id){return {role,innerText:txt,getAttribute(k){return {'data-message-author-role':role,'data-message-id':id,'data-complete':'true'}[k]||null},closest:()=>null};}
 async function activate(h){const r=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true,override:''});if(!r.ok)console.log('activation error:',r);assert.equal(r.ok,true);}
 const s=h=>h.rpc({type:'STATUS',id:CHAT});
-test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.5.1');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
+test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.6.0');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
 test('activation never sends against an old answer',async()=>{const h=harness(),c=h.fakePage();await activate(h);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);assert.equal((await s(h)).session.lastHandled,'assistant-1');});
 test('waits for a finished response, sends once, then a next response, respects cap',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();c.page.user('start');c.page.assistant('partial',true);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);
@@ -94,6 +94,7 @@ test('acknowledgment must match the submitted message, not an unrelated new user
 async function missionHarness(){
  const h=harness(),remote={online:true,state:'ACTIVE',missions:new Map(),calls:[]};
  h.setFetch(async(url,options)=>{remote.calls.push(url);if(!remote.online)throw Error('Controlled outage');
+  if(options.method==='POST'&&url.endsWith('/cancel')){const id=url.split('/').at(-2),body=remote.missions.get(id);if(remote.state==='ACTIVE')remote.state='CANCELLED';return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};}
   if(options.method==='POST'){const body=JSON.parse(options.body);remote.missions.set(body.id,body);return {ok:true,json:async()=>({id:body.id,conversation_id:body.conversation_id,state:remote.state})};}
   const id=url.split('/').at(-1),body=remote.missions.get(id);return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};
  });
@@ -123,7 +124,7 @@ test('Unlimited remote outage permits exactly five additional attempts, then rem
  assert.equal((await s(h)).session.enabled,false);h.restart();assert.equal((await s(h)).mission.offlineAttempts,5);assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);assert.equal(c.page.sent.length,6);
 });
 test('Limited never exceeds its cap during a remote outage',async()=>{
- const {h,remote}=await missionHarness();const c=await deliverInstruction(h);remote.online=false;
+ const {h,remote}=await missionHarness();await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:2});const c=await deliverInstruction(h);remote.online=false;
  for(let i=0;i<3;i++)await finishMissionReply(h,c);
  assert.equal((await s(h)).session.enabled,false);assert.equal((await s(h)).session.turns,2);assert.equal((await s(h)).mission.offlineAttempts,2);assert.equal(c.page.sent.length,3);
 });
@@ -141,7 +142,7 @@ test('mission mode does not equate intermediate prose with authoritative remote 
 
 
 test('same mission resume preserves Limited count, journal and offline grace across browser startup',async()=>{
- const {h,remote}=await missionHarness();const c=await deliverInstruction(h);remote.online=false;await finishMissionReply(h,c);const before=await s(h);assert.equal(before.session.turns,1);assert.equal(before.mission.offlineAttempts,1);
+ const {h,remote}=await missionHarness();await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:2});const c=await deliverInstruction(h);remote.online=false;await finishMissionReply(h,c);const before=await s(h);assert.equal(before.session.turns,1);assert.equal(before.mission.offlineAttempts,1);
  await h.events.startup();assert.equal((await s(h)).session.enabled,false);await activate(h);await c.tick();const after=await s(h);assert.equal(after.session.turns,1);assert.equal(after.session.lastClaim.token,before.session.lastClaim.token);assert.equal(after.mission.offlineAttempts,1);
  await finishMissionReply(h,c);assert.equal((await s(h)).session.turns,2);await finishMissionReply(h,c);assert.equal((await s(h)).session.enabled,false);assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);assert.equal(c.page.sent.length,3);
 });
@@ -149,4 +150,108 @@ test('registration retry cannot inherit an unrelated prior Local Only count or j
  const {h,remote}=await missionHarness();h.storage['chat:'+CHAT]={enabled:false,state:'PAUSED',turns:99,limitMode:'limited',maxTurns:2,lastClaim:{token:'unrelated-local-claim'}};
  remote.online=false;assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);const id=h.storage['mission:'+CHAT].id;
  remote.online=true;await activate(h);const after=await s(h);assert.equal(after.mission.id,id);assert.equal(after.session.missionId,id);assert.equal(after.session.turns,0);assert.equal(after.session.lastClaim,null);
+});
+
+
+test('cancel mission changes remote state and blocks old mission restart',async()=>{
+ const {h,remote}=await missionHarness();await deliverInstruction(h);
+ const result=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});
+ assert.equal(result.ok,true);assert.equal(result.state,'CANCELLED');assert.equal(remote.state,'CANCELLED');
+ assert.equal((await s(h)).session.enabled,false);
+ const retry=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true});assert.equal(retry.ok,false);
+ const newMission=await h.rpc({type:'NEW_MISSION',id:CHAT,tabId:10});assert.equal(newMission.ok,true);
+ assert.equal((await s(h)).mission.id,null);
+});
+
+test('failed cancellation remains fail-closed without claiming success',async()=>{
+ const {h,remote}=await missionHarness();await deliverInstruction(h);remote.online=false;
+ const result=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});
+ assert.equal(result.ok,false);assert.equal(remote.state,'ACTIVE');
+ const snapshot=await s(h);
+ assert.equal(snapshot.mission.state,'ACTIVE');
+ assert.equal(snapshot.session.enabled,false);
+ assert.match(snapshot.session.lastError,/remote cancellation was not confirmed/);
+});
+
+test('Mission Signal defaults unlimited and preserves Local Only cap on mode switch',async()=>{
+ const {h}=await missionHarness();
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:20});
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'mission'});
+ await h.rpc({type:'SET_MISSION_CAP',id:CHAT,tabId:10,enabled:false,maxTurns:20});
+ await activate(h);let current=(await s(h)).session;assert.equal(current.limitMode,'unlimited');assert.equal(current.maxTurns,20);
+ await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
+ assert.equal((await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10})).ok,true);
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
+ await activate(h);current=(await s(h)).session;assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,20);
+});
+
+
+test('manually confirmed mission instruction is reconciled without repeating setup',async()=>{
+ const {h}=await missionHarness(),c=h.fakePage();await activate(h);await c.tick();
+ c.page.onSend=()=>{c.page.entries.at(-1).innerText='unrelated user text';};
+ h.updateClock(7000);await c.tick();
+ assert.equal((await s(h)).mission.instructionState,'claimed');
+ assert.equal((await s(h)).session.enabled,false);
+ c.page.entries.at(-1).innerText=c.page.sent[0];
+ await c.tick();assert.equal((await s(h)).mission.instructionState,'sent');
+ await activate(h);await c.tick();h.updateClock(12000);await c.tick();
+ assert.equal(c.page.sent.length,1);
+});
+
+
+test('terminal mission history persists after reset and switching to Local Only',async()=>{
+ const {h}=await missionHarness();await deliverInstruction(h);
+ const finished=await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10});assert.equal(finished.state,'CANCELLED');
+ const first=await s(h);assert.equal(first.missionHistory[0].state,'CANCELLED');
+ const oldId=first.missionHistory[0].id;
+ assert.equal((await h.rpc({type:'NEW_MISSION',id:CHAT,tabId:10})).ok,true);
+ await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ h.restart();const result=await s(h);
+ assert.equal(result.missionHistory[0].id,oldId);assert.equal(result.missionHistory[0].state,'CANCELLED');
+});
+
+test('cannot switch from active registered Mission Signal to Local Only without cancellation',async()=>{
+ const {h}=await missionHarness();await deliverInstruction(h);
+ await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
+ const result=await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'});
+ assert.equal(result.ok,false);assert.match(result.error,/Cancel the active mission/);
+ assert.equal((await s(h)).mission.mode,'mission');
+});
+
+
+test('Local Only completion remains in activity history after starting a fresh session',async()=>{
+ const h=harness();await activate(h);
+ const done=await h.rpc({type:'PAUSE',id:CHAT,reason:'Roadmap completion detected.',state:'COMPLETED'},h.owner);
+ assert.equal(done.ok,true);let result=await s(h);
+ assert.equal(result.session.state,'COMPLETED');assert.equal(result.noticeHistory.length,1);
+ assert.equal(result.noticeHistory[0].mode,'local');assert.equal(result.noticeHistory[0].state,'COMPLETED');
+ assert.match(result.noticeHistory[0].reason,/Roadmap completion/);
+ await activate(h);h.restart();result=await s(h);
+ assert.equal(result.noticeHistory.length,1);assert.equal(result.noticeHistory[0].state,'COMPLETED');
+});
+
+test('important error notice survives refresh and activation without duplicate history',async()=>{
+ const h=harness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Submission uncertain: no acknowledgment.',state:'PAUSED'},h.owner);
+ const before=await s(h);assert.equal(before.noticeHistory.length,1);
+ await activate(h);h.restart();const after=await s(h);
+ assert.equal(after.noticeHistory.length,1);assert.match(after.noticeHistory[0].reason,/Submission uncertain/);
+});
+
+
+test('optional Mission Signal cap cannot overwrite separate Local Only numeric preference',async()=>{
+ const {h}=await missionHarness();
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
+ await h.rpc({type:'SET_LIMIT',id:CHAT,tabId:10,limitMode:'limited',maxTurns:7});
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'mission'})).ok,true);
+ await h.rpc({type:'SET_MISSION_CAP',id:CHAT,tabId:10,enabled:true,maxTurns:13});
+ await activate(h);let current=(await s(h)).session;
+ assert.equal(current.maxTurns,13);assert.equal(current.missionMaxTurns,13);assert.equal(current.localMaxTurns,7);
+ await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});
+ assert.equal((await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10})).ok,true);
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
+ await activate(h);current=(await s(h)).session;
+ assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,7);assert.equal(current.localMaxTurns,7);
+ assert.equal(current.missionMaxTurns,13);
 });

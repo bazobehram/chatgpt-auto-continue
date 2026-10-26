@@ -1,4 +1,4 @@
-# ChatGPT Auto-Continue v0.5.0
+# ChatGPT Auto-Continue v0.6.0
 
 Manifest V3 Chrome extension using your existing ChatGPT login, with an optional independent Mission Signal service on your homeserver. Local Only works without that service. No telemetry or remotely loaded extension code.
 
@@ -7,6 +7,15 @@ Manifest V3 Chrome extension using your existing ChatGPT login, with an optional
 Keep the current unpacked source directory and extension ID. Update files here, then click Reload on the existing entry in chrome://extensions. Refresh disposable test tabs to load the content script. No ZIP or second installation is required.
 
 ## Use
+
+**Mission Signal:** Selecting Mission Signal hides the Local Only limit controls and enables completion-driven continuation by default. An optional, separately saved numeric safety cap is in Advanced settings and must be enabled explicitly. Switching modes preserves both numeric preferences independently. If the service disconnects, at most five offline continuation attempts are allowed; the controller then pauses. The server's completed state is authoritative.
+
+**History and recovery:** The collapsed History section retains terminal Mission IDs, Local Only completion events, and important stop/error reasons. These records survive Start, New Mission, refresh, mode changes, and worker restarts. An old completed/cancelled Mission ID is never reused automatically.
+
+**Mission lifecycle:** Start registers the mission and sends one setup instruction. If it was manually sent after a UI failure, the controller reconciles the exact instruction from the conversation instead of repeating it. Resume reactivates a confirmed mission while retaining count and journal. Cancel mission requests authenticated cancellation from the homeserver; a network failure never claims success. New mission is allowed only after the preceding mission is completed or cancelled. The popup shows Completed or Cancelled and disables Start for those terminal states. Cancelling is irreversible for that Mission ID. Avoid resetting a mission when an old unsent draft remains in the composer.
+
+**Deployment compatibility:** The Cancel control requires Mission Signal service v0.2.0 with the authenticated `/cancel` route. Updating the extension alone is insufficient; deploy the independent service before enabling this version in real Chrome.
+
 
 Open a saved ChatGPT conversation, including project conversations. Start acknowledges the current reply and waits for a new completed reply. Send once, available after Start, requests the first continuation for an existing finished reply; subsequent eligible replies continue automatically until paused or the limit is reached.
 
@@ -30,6 +39,9 @@ Permissions: storage, alarms, tabs, and host access to https://chatgpt.com/* and
 
 ## Tests
 
+Run all seven suites before installing; the GitHub Actions workflow on the feature branch checks the same acceptance runner. Existing production Chrome requires a separate, user-authorized live smoke test. Do not interpret isolated browser fixture success as a real authenticated Chrome result.
+
+
 - npm test: Node controller/content tests.
 - python tests/smoke.py: manifest, permissions, files and JavaScript syntax.
 - npm run test:all: all suites, with logs in tests/full-test-results.json.
@@ -48,7 +60,7 @@ Roadmap/approval detection uses conservative English patterns and cannot underst
 
 A partial live acceptance run is not full production verification.
 
-## v0.5.0 conversation limits and runtime status
+## v0.6.0 conversation limits and runtime status
 
 Continuation limit is in the main view. Limited takes a positive whole number; Unlimited removes the count cap while retaining all submission, ownership, authentication, approval and recovery safeguards. Each conversation saves its own mode and numeric value. Changing the mode or limit preserves the counter and journal; explicitly starting a paused Local Only session establishes a new baseline and resets that session count. Resuming the same registered mission preserves its continuation count and journal; an exhausted Limited mission requires a raised limit or an explicit new mission.
 

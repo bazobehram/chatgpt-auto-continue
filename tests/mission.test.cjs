@@ -12,8 +12,13 @@ const root=path.resolve(__dirname,'..');
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(__dirname,'mock_chat.html'),'utf8')}));
   await context.route('https://mission-signal.synovaq.org/**',async route=>{
    requests++;if(!online)return route.abort('connectionfailed');const req=route.request();let result;
-   if(req.method()==='POST'){const body=req.postDataJSON();result={id:body.id,conversation_id:body.conversation_id,state:'ACTIVE'};missions.set(body.id,result);}
-   else result=missions.get(req.url().split('/').at(-1));
+   if(req.method()==='POST'&&req.url().endsWith('/cancel')){
+     const id=req.url().split('/').at(-2),current=missions.get(id);
+     if(current?.state==='ACTIVE')current.state='CANCELLED';
+     result=current;
+   }else if(req.method()==='POST'){
+     const body=req.postDataJSON();result={id:body.id,conversation_id:body.conversation_id,state:'ACTIVE'};missions.set(body.id,result);
+   }else result=missions.get(req.url().split('/').at(-1));
    await route.fulfill({contentType:'application/json',body:JSON.stringify(result)});
   });
   const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker'),extensionId=worker.url().split('/')[2],popupUrl='chrome-extension://'+extensionId+'/popup.html';
@@ -33,6 +38,10 @@ const root=path.resolve(__dirname,'..');
   const a=await newChat();
   await check('Registration and one automatically acknowledged instruction; no secrets in chat',async()=>{
    await instruction(a);const text=(await sent(a))[0],s=await status(a);assert.match(text,/mission-signal complete/);assert.ok(!text.includes('fixture-secret-only'));assert.equal(s.session.turns,0);assert.equal(missions.size,1);
+   const p=await context.newPage();await a.page.bringToFront();await p.goto(popupUrl);
+   assert.equal(await p.locator('#limitCard').isHidden(),true);
+   assert.match(await p.locator('#modeHint').textContent(),/verified completion/);
+   await p.close();
   });
   await check('Refresh and explicit resume never repeat a confirmed instruction',async()=>{
    await a.page.reload();await tick(a);await wait(async()=>(await status(a)).session.enabled===false,'refresh paused');await start(a);await a.page.waitForTimeout(3500);assert.deepEqual(await sent(a),[]);assert.equal((await status(a)).mission.instructionState,'sent');
@@ -56,7 +65,11 @@ const root=path.resolve(__dirname,'..');
    await a.page.reload();await tick(a);assert.equal((await rpc({type:'SET_SESSION',id:a.id,tabId:a.tabId,enabled:true})).ok,false);assert.equal((await status(a)).mission.offlineAttempts,5);
   });
   await check('Explicit Local Only continues independently throughout the remote outage',async()=>{
-   const c=await newChat('local');await start(c);await c.page.evaluate(()=>mock.user('local QA'));await reply(c);await wait(async()=>(await sent(c)).length===1,'Local Only offline continuation');assert.equal((await status(c)).session.enabled,true);await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});
+   const c=await newChat('local');await start(c);
+   const p=await context.newPage();await c.page.bringToFront();await p.goto(popupUrl);
+   assert.equal(await p.locator('#limitCard').isVisible(),true);
+   await p.close();
+   await c.page.evaluate(()=>mock.user('local QA'));await reply(c);await wait(async()=>(await sent(c)).length===1,'Local Only offline continuation');assert.equal((await status(c)).session.enabled,true);await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});
   });
   await check('Reconnection synchronizes remote completion and never sends another go',async()=>{
    const m=(await status(a)).mission;missions.get(m.id).state='COMPLETED';online=true;const r=await rpc({type:'SET_SESSION',id:a.id,tabId:a.tabId,enabled:true});assert.equal(r.ok,false);assert.equal((await status(a)).session.state,'COMPLETED');assert.deepEqual(await sent(a),[]);
@@ -74,8 +87,33 @@ const root=path.resolve(__dirname,'..');
    // Force an owner-originated synchronization through a normal controller cycle after the cache expires.
    await b.page.waitForTimeout(15100);await tick(b);assert.equal((await status(b)).session.state,'COMPLETED');assert.equal((await status(c)).session.enabled,true);await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});
   });
+  await check('Completed mission UI disables Start and retains evidence after New Mission and Local Only',async()=>{
+   await a.page.bringToFront();const popup=await context.newPage();popup.on('dialog',dialog=>dialog.accept());await a.page.bringToFront();await popup.goto(popupUrl);
+   await wait(async()=>await popup.locator('#status').textContent()==='Completed','completed badge');
+   assert.equal(await popup.locator('#toggleSession').isDisabled(),true);
+   assert.match(await popup.locator('#missionStatus').textContent(),/mission completed/);
+   const old=(await status(a)).mission.id;
+   await popup.locator('#newMission').click();
+   await wait(async()=>!(await status(a)).mission.id,'fresh mission prepared');
+   await wait(async()=>await popup.locator('#missionHistoryItems').textContent().then(t=>t.includes(old)),'completed history retained');
+   await popup.locator('#missionMode').selectOption('local');
+   await wait(async()=>await popup.locator('#missionMode').inputValue()==='local','Local Only selected');
+   assert.match(await popup.locator('#missionHistoryItems').textContent(),/COMPLETED/);
+   await popup.close();
+  });
+  await check('Cancel mission changes remote state, preserves history, and blocks abandoned mode switch',async()=>{
+   const c=await newChat();await instruction(c);
+   const denied=await rpc({type:'SET_MISSION_MODE',id:c.id,tabId:c.tabId,mode:'local'});assert.equal(denied.ok,false);
+   const previous=(await status(c)).mission.id;
+   const cancelled=await rpc({type:'CANCEL_MISSION',id:c.id,tabId:c.tabId});assert.equal(cancelled.ok,true);assert.equal(cancelled.state,'CANCELLED');assert.equal(missions.get(previous).state,'CANCELLED');
+   assert.equal((await status(c)).session.enabled,false);
+   assert.equal((await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:true})).ok,false);
+   assert.equal((await rpc({type:'NEW_MISSION',id:c.id,tabId:c.tabId})).ok,true);
+   assert.equal((await status(c)).missionHistory[0].id,previous);
+   assert.equal((await status(c)).missionHistory[0].state,'CANCELLED');
+  });
   await check('Cleanup leaves no armed disposable controllers; connection checks occurred before sends',async()=>{
    for(const c of chats){await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});await c.page.close();assert.equal((await status(c)).session.enabled,false);}assert.ok(requests>15);
   });
- }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.5.1',environment:'isolated Chromium fixtures',results},null,2));}
+ }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.6.0',environment:'isolated Chromium fixtures',results},null,2));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

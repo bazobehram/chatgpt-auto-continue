@@ -1,3 +1,15 @@
+## v0.6.0 — Mission lifecycle and durable history
+
+- Separate Local Only and Mission Signal numeric-limit preferences. Local Only retains its Limited/Unlimited controls; Mission Signal defaults to remote-completion-driven continuation, with an optional independent cap in Advanced settings.
+- Clear Resume, Cancel Mission, and New Mission actions with confirmation and prevention of abandoned active remote missions.
+- Mission Signal service v0.2.0 supports authenticated, idempotent cancellation, without modifying CommandCore.
+- Completed and cancelled Mission IDs, Local Only completion events, and important error notices remain available in History after reset, refresh, mode switching, and worker restarts.
+- Popup displays completed/cancelled terminal status, disables invalid Start actions, and hides irrelevant Local Only limit controls in Mission Signal mode.
+- Safer pre-click abort handling, manual instruction reconciliation, bounded composer readiness, preserved journals, serialized status polling, and graceful teardown of invalidated content scripts.
+- Expanded controller and Chromium UI coverage for lifecycle transitions, independent settings, offline limits, history persistence, and cancellation.
+
+**Verification:** 59/59 controller tests passed on an isolated homeserver worktree. Complete Chromium/service CI and authenticated user-Chrome acceptance are independently tracked; do not claim release acceptance until both are verified.
+
 ## v0.5.1 — Mission instruction recovery
 
 - Wait up to 4.5 seconds for the ChatGPT Send control to become ready after writing the setup instruction, without repeated clicks.

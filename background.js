@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -28,7 +28,24 @@ async function owner(id,sender){
   if(!s?.enabled || !Number.isInteger(sender.tab?.id) || s.ownerTabId!==sender.tab.id || !tabMatches(sender.tab.url,id)) return null;
   return s;
 }
-async function pause(id,reason,state='PAUSED'){const s=await read(id);if(s){await write(id,{...s,enabled:false,state:['PAUSED','NEEDS_USER','COMPLETED','ERROR'].includes(state)?state:'PAUSED',lastError:String(reason).slice(0,360)});}}
+const noticesKey=id=>'notices:'+id;
+async function noticeHistory(id){return (await chrome.storage.local.get(noticesKey(id)))[noticesKey(id)]||[];}
+async function rememberNotice(id,item){
+  const entries=await noticeHistory(id);
+  if(entries[0]&&entries[0].generation===item.generation&&entries[0].state===item.state&&entries[0].reason===item.reason)return;
+  await chrome.storage.local.set({[noticesKey(id)]:[item,...entries].slice(0,20)});
+}
+async function pause(id,reason,state='PAUSED'){
+  const s=await read(id);if(!s)return;
+  const nextState=['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED';
+  const explanation=String(reason).slice(0,360);
+  await write(id,{...s,enabled:false,state:nextState,lastError:explanation});
+  if((nextState==='COMPLETED'||nextState==='CANCELLED'||nextState==='ERROR'||nextState==='NEEDS_USER'||/uncertain|disconnected|failed|unavailable|error|exhausted/i.test(explanation))
+    &&(s.enabled||s.state!==nextState||s.lastError!==explanation)){
+    const m=await MissionSignal.get(id);
+    await rememberNotice(id,{mode:m.mode||'local',missionId:m.mode==='mission'?m.id||null:null,state:nextState,reason:explanation,turns:s.turns||0,generation:s.generation||null,recordedAt:Date.now()});
+  }
+}
 async function sessionStatus(id){
   let s=await read(id);if(!s?.enabled)return s;
   let t;try{t=await chrome.tabs.get(s.ownerTabId);}catch{}
@@ -42,24 +59,62 @@ async function sessionStatus(id){
 async function dispatch(m,sender){
   if(m.type==='STATUS'){
     if(!validId(m.id))return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:null,mission:null,version:VERSION};
-    // Remote completion must be visible even after the controller paused on a failed draft.
-    const remote=await MissionSignal.synchronize(m.id);
-    if(remote.mode==='mission'&&remote.state==='COMPLETED'){
-      await serial(m.id,async()=>{
+    // Serialize polling with cancel, mode switch and sends: a stale ACTIVE status
+    // must never overwrite a terminal mission state.
+    const remote=await serial(m.id,async()=>{
+      const result=await MissionSignal.synchronize(m.id);
+      if(result.mode==='mission'&&['COMPLETED','CANCELLED'].includes(result.state)){
         const current=await read(m.id);
-        if(current&&current.state!=='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');
-      });
-    }
-    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),version:VERSION};
+        if(current&&current.state!==result.state)
+          await pause(m.id,result.state==='COMPLETED'?'Remote mission completed.':'Mission cancelled.',result.state);
+      }
+      return result;
+    });
+    return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),noticeHistory:await noticeHistory(m.id),version:VERSION};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){await MissionSignal.configure(m.enrollment);return {ok:true};}
+  if(m.type==='CANCEL_MISSION'){
+    if(!validId(m.id))throw Error('Open a saved conversation first.');
+    const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const current=await read(m.id);
+      if(current?.enabled&&current.ownerTabId!==t.id)throw Error('Only owner tab can cancel.');
+      // Stop local sends before waiting for the network. Remote cancellation may fail;
+      // the popup must then say so and allow the user to retry.
+      if(current)await write(m.id,{...current,enabled:false,ownerTabId:null,state:'PAUSED',lastError:'Local automation stopped. Confirming remote cancellation…'});
+      try{
+        const remote=await MissionSignal.cancel(m.id);
+        const latest=await read(m.id);
+        if(latest)await write(m.id,{...latest,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled on homeserver.'});
+        return {ok:true,state:remote.state};
+      }catch(error){
+        const latest=await read(m.id);
+        if(latest)await write(m.id,{...latest,enabled:false,state:'PAUSED',lastError:'Local automation stopped, but remote cancellation was not confirmed. Retry Cancel Mission when connected.'});
+        throw error;
+      }
+    });
+  }
+  if(m.type==='RESUME_MISSION'){
+    if(!validId(m.id))throw Error('Open a saved conversation first.');
+    const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const sess=await read(m.id),mstate=await MissionSignal.synchronize(m.id,true);
+      if(mstate.mode!=='mission'||mstate.state!=='ACTIVE'||mstate.instruction?.state!=='sent')throw Error('Mission instruction not verified. Review transcript or start a new mission.');
+      if(sess?.enabled)throw Error('Pause before resuming.');
+      if(sess?.limitMode==='limited'&&(sess.turns||0)>=(sess.maxTurns||1))throw Error('Continuation cap reached.');
+      const defaults=await config();
+      await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:sess?.missionCapEnabled?'limited':'unlimited',missionCapEnabled:sess?.missionCapEnabled||false,localLimitMode:sess?.localLimitMode||defaults.limitMode,localMaxTurns:sess?.localMaxTurns||defaults.maxTurns,missionMaxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,maxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
+      return {ok:true};
+    });
+  }
   if(m.type==='SET_MISSION_MODE'||m.type==='NEW_MISSION'){
     if(!validId(m.id))throw Error('Open a saved conversation first.');
     const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
     return serial(m.id,async()=>{if((await read(m.id))?.enabled)throw Error('Pause before changing mission mode.');
       if(m.type==='NEW_MISSION'){
         const current=await MissionSignal.get(m.id);
+        if(current.registered&&current.state==='ACTIVE')throw Error('Cancel the active remote mission before creating a new one.');
         // This invalidates the local controller's association; it does not claim
         // to cancel a registered mission on the remote service.
         await MissionSignal.put(m.id,{mode:'mission'});
@@ -95,8 +150,26 @@ async function dispatch(m,sender){
     if(!['limited','unlimited'].includes(m.limitMode))throw Error('Choose Limited or Unlimited.');
     const n=Number(m.maxTurns);if(!Number.isSafeInteger(n)||n<1)throw Error('Continuation limit must be a positive whole number.');
     return serial(m.id,async()=>{const old=await read(m.id);if(old?.enabled&&old.ownerTabId!==t.id)throw Error('Change limits in the owner tab.');
-      const next={...(old||{enabled:false,state:'IDLE',turns:0}),limitMode:m.limitMode,maxTurns:n};
+      const remoteMode=(await MissionSignal.get(m.id)).mode==='mission';
+      const defaults=await config();
+      const next={...(old||{enabled:false,state:'IDLE',turns:0}),
+        limitMode:m.limitMode,maxTurns:n,
+        localLimitMode:remoteMode?(old?.localLimitMode||defaults.limitMode):m.limitMode,
+        localMaxTurns:remoteMode?(old?.localMaxTurns||old?.maxTurns||defaults.maxTurns):n,
+        missionCapEnabled:remoteMode?m.limitMode==='limited':old?.missionCapEnabled||false,
+        missionMaxTurns:remoteMode?n:old?.missionMaxTurns||20};
       await write(m.id,next);if(next.enabled&&next.limitMode==='limited'&&next.turns>=n)await pause(m.id,'Maximum auto-continue count reached.');return {ok:true};});
+  }
+  if(m.type==='SET_MISSION_CAP'){
+    if(!validId(m.id))throw Error('Open a saved conversation.');
+    const tab=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(tab.url,m.id))throw Error('Conversation changed.');
+    const n=Number(m.maxTurns);if(!Number.isSafeInteger(n)||n<1)throw Error('Enter a positive cap.');
+    return serial(m.id,async()=>{
+      const old=await read(m.id);if(old?.enabled)throw Error('Pause the mission before changing its safety cap.');
+      if((await MissionSignal.get(m.id)).mode!=='mission')throw Error('Choose Mission Signal first.');
+      await write(m.id,{...(old||{enabled:false,state:'IDLE',turns:0}),missionCapEnabled:m.enabled===true,missionMaxTurns:n,maxTurns:n,limitMode:m.enabled===true?'limited':'unlimited'});
+      return {ok:true};
+    });
   }
   if(m.type==='SET_SESSION'){
     const id=String(m.id||'');if(!validId(id)) throw Error('Open a saved ChatGPT conversation first.');
@@ -113,10 +186,13 @@ async function dispatch(m,sender){
       if(!enabled && existing?.enabled && existing.ownerTabId!==tabId) throw Error('Only the owner tab can pause this conversation.');
       if(!enabled){await write(id,{...(existing||fresh(tabId,override)),enabled:false,ownerTabId:null,override,state:'PAUSED',lastError:''});return {ok:true};}
       if(existing?.enabled){await write(id,{...existing,override});return {ok:true};}
-      const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
+      const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='CANCELLED')throw Error('Mission cancelled. Prepare a new mission.');
+      if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
       const defaults=await config(),resumeMission=mission.mode==='mission'&&mission.id&&existing?.missionId===mission.id;
-      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?'unlimited':existing?.limitMode||defaults.limitMode,maxTurns:existing?.maxTurns||defaults.maxTurns,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
+      const localMax=existing?.localMaxTurns||existing?.maxTurns||defaults.maxTurns;
+      const missionMax=existing?.missionMaxTurns||existing?.maxTurns||20;
+      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?(existing?.missionCapEnabled?'limited':'unlimited'):existing?.localLimitMode||existing?.limitMode||defaults.limitMode,missionCapEnabled:existing?.missionCapEnabled||false,localLimitMode:existing?.localLimitMode||existing?.limitMode||defaults.limitMode,localMaxTurns:localMax,missionMaxTurns:missionMax,maxTurns:mission.mode==='mission'?missionMax:localMax,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
       if(resumeMission&&s.limitMode!=='unlimited'&&s.turns>=s.maxTurns)throw Error('Mission continuation limit reached. Raise the limit or explicitly prepare a new mission.');
       await write(id,s);return {ok:true};
     });
@@ -144,7 +220,8 @@ async function dispatch(m,sender){
     if(!s)return {ok:false,error:'Session inactive or not owned by this tab.'};
     if(m.generation&&m.generation!==s.generation)return {ok:false,reason:'stale activation'};
     if(m.type==='MISSION_SYNC'){
-      const mission=await MissionSignal.synchronize(m.id,Boolean(m.force));if(mission.mode==='mission'&&mission.state==='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');return {ok:true,mission:MissionSignal.summary(mission)};
+      const mission=await MissionSignal.synchronize(m.id,Boolean(m.force));if(mission.mode==='mission'&&mission.state==='COMPLETED')await pause(m.id,'Remote mission completed.','COMPLETED');
+      if(mission.mode==='mission'&&mission.state==='CANCELLED')await pause(m.id,'Mission cancelled.');return {ok:true,mission:MissionSignal.summary(mission)};
     }
     if(m.type==='CHECK_SEND')return {ok:s.state==='SENDING'&&s.lastClaim?.token===m.token};
     if(m.type==='ATTACH'){
@@ -176,6 +253,13 @@ async function dispatch(m,sender){
       const claim={assistantKey:snapshot.assistantKey,assistantSig:snapshot.assistantSig,kind:instruction?'instruction':'continuation',claimedAt:Date.now(),token:initial?.token||`${Date.now()}-${Math.random().toString(36).slice(2)}`};
       await write(m.id,{...s,state:'SENDING',turns:(s.turns||0)+(instruction?0:1),lastClaim:claim,lastHandled:claim.assistantKey,kickoffRequested:false,lastError:'',waitingSince:Date.now(),lastActivity:Date.now()});
       return {ok:true,token:claim.token,message:initial?.message||String(s.override||(await config()).message||'go').trim()};
+    }
+    if(m.type==='ABORT_UNSENT'){
+      if(s.state!=='SENDING'||s.lastClaim?.token!==m.token||m.clicked!==false)return {ok:false};
+      // This must be called only before the click path; no send attempt can have occurred.
+      if(s.lastClaim.kind==='instruction'&&!await MissionSignal.releaseUnsentInstruction(m.id,m.token))return {ok:false};
+      await write(m.id,{...s,enabled:false,state:'PAUSED',lastClaim:null,lastHandled:null,lastError:'Submission was not clicked. Review or clear the draft; Start can retry safely.'});
+      return {ok:true};
     }
     if(m.type==='CONFIRM_SENT'){
       if(s.state!=='SENDING'||!s.lastClaim||s.lastClaim.token!==m.token)return {ok:false,reason:'stale claim'};

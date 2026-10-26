@@ -85,7 +85,7 @@ const root=path.resolve(__dirname,'..');
    await popup.getByRole('button',{name:'Start',exact:true}).click();await wait(async()=>(await status(a)).state==='OBSERVING','popup Start');
    await working(a);await wait(async()=>await popup.locator('#status').textContent()==='Generating','live generating badge');
    await popup.getByRole('button',{name:'Pause',exact:true}).click();await wait(async()=>(await status(a)).enabled===false,'popup Pause');
-   assert.equal(await popup.locator('#toggleSession').textContent(),'Start');assert.equal(await popup.locator('#turns').textContent(),'0 / 5');
+   await wait(async()=>await popup.locator('#toggleSession').textContent()==='Start','popup pause reflected');assert.equal(await popup.locator('#turns').textContent(),'0 / 5');
    await finish(a);await a.page.waitForTimeout(3500);assert.deepEqual(a.sent,[]);assert.equal(await popup.locator('#status').textContent(),'Paused');
    await popup.close();await a.page.close();
   });

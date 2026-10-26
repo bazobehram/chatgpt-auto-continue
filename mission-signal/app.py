@@ -59,7 +59,7 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title='Mission Signal', version='0.1.0', lifespan=lifespan,
+app = FastAPI(title='Mission Signal', version='0.2.0', lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 
 
@@ -93,7 +93,7 @@ def public(row):
 def health():
     with database() as con:
         con.execute('SELECT 1').fetchone()
-    return {'status': 'ok', 'version': '0.1.0'}
+    return {'status': 'ok', 'version': '0.2.0'}
 
 
 @app.post('/v1/missions')
@@ -143,4 +143,14 @@ def complete(mission_id: UUID, authorization: str | None = Header(default=None))
         con.execute('BEGIN IMMEDIATE')
         authorized_row(con, mission_id, authorization, 'completion')
         con.execute("UPDATE missions SET state='COMPLETED', completed_at=? WHERE id=? AND state='ACTIVE'", (int(time.time()), str(mission_id)))
+        return public(con.execute('SELECT * FROM missions WHERE id=?', (str(mission_id),)).fetchone())
+
+
+@app.post('/v1/missions/{mission_id}/cancel')
+def cancel(mission_id: UUID, authorization: str | None = Header(default=None)):
+    """Cancellation uses the mission-specific read capability, never the enrollment key."""
+    with database() as con:
+        con.execute('BEGIN IMMEDIATE')
+        authorized_row(con, mission_id, authorization, 'read')
+        con.execute("UPDATE missions SET state='CANCELLED' WHERE id=? AND state='ACTIVE'", (str(mission_id),))
         return public(con.execute('SELECT * FROM missions WHERE id=?', (str(mission_id),)).fetchone())

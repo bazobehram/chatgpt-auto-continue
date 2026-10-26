@@ -54,7 +54,7 @@
     const turn=assistant?.closest('[data-talvt-turn-state]');
     const finalEvidence=turn?turn.getAttribute('data-talvt-turn-state')==='complete':Boolean(assistant?.getAttribute('data-complete')==='true'||assistant?.closest('[data-testid^="conversation-turn-"]')?.querySelector?.('[data-testid="copy-turn-action-button"], button[aria-label="Copy"], button[aria-label="Copy response"]'));
     const busy=stop||streaming||Boolean(turn&&turn.getAttribute('data-talvt-turn-state')!=='complete');
-    return {assistantKey,assistantSig,assistantText,renderFailed,userKey,userText:(user?.innerText||user?.textContent||'').trim(),userCount:users.length,lastRole,busy,finalEvidence,editor,editorText,submit};
+    return {assistantKey,assistantSig,assistantText,renderFailed,userKey,userText:(user?.innerText||user?.textContent||'').trim(),userMessages:users.slice(-200).map(e=>({text:(e.innerText||e.textContent||'').trim(),key:identity(e)})),userCount:users.length,lastRole,busy,finalEvidence,editor,editorText,submit};
   }
   function reset(s){
     lastSig=s.assistantSig;changedAt=now();lastProgressSig=s.assistantSig;lastProgressAt=now();
@@ -82,8 +82,10 @@
       sessionGeneration=sess?.generation||null;
       if(sess?.enabled&&res.callerTabId!==undefined&&sess.ownerTabId!==res.callerTabId)return;
       if(activeId!==id){activeId=id;activationGeneration=null;lastState='';reset(s);}
-      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&s.userText){
-        await send({type:'RECONCILE_INSTRUCTION',id,userText:s.userText,userKey:s.userKey,userCount:s.userCount});
+      if(mission?.mode==='mission'&&mission.instructionState==='claimed'&&mission.id){
+        const expected=`Mission Signal instruction (one time). Mission ID: ${mission.id}.`;
+        const matching=s.userMessages?.find(e=>e.text.startsWith(expected));
+        if(matching)await send({type:'RECONCILE_INSTRUCTION',id,userText:matching.text,userKey:matching.key,userCount:s.userCount});
       }
       if(!sess?.enabled){activationGeneration=null;lastState='';reset(s);return;}
       if(mission?.mode==='mission'){
@@ -148,6 +150,7 @@
       // IMPORTANT: No click happens until claim is durably persisted.
       const claim=await send({type:'CLAIM_SEND',id,kickoff,instruction,snapshot:{assistantKey:s.assistantKey,assistantSig:s.assistantSig}});
       if(!claim.ok)return;
+      let clicked=false;
       try{
         if(!getId()||getId()!==id)throw Error('Conversation navigated away');
         const permitted=await send({type:'CHECK_SEND',id,token:claim.token});if(!permitted.ok)throw Error('Paused before submission');
@@ -177,6 +180,7 @@
         const allowed=await send({type:'CHECK_SEND',id,token:claim.token});
         const final=snapshot();
         if(!allowed.ok||getId()!==id||final.busy||final.editorText!==message||final.assistantSig!==s.assistantSig||!final.submit||final.submit.disabled)throw Error('Paused or conversation changed before click');
+        clicked=true; // mark before invoking external UI behavior: click may throw after submission
         final.submit.click();
         // Wait for transcript evidence, not a fixed 450 ms guess. Never click a second time.
         let acknowledged=false;const deadline=now()+10000;
@@ -191,7 +195,13 @@
         const confirmed=await send({type:'CONFIRM_SENT',id,token:claim.token});
         if(!confirmed.ok)throw Error('Send clicked but journal not confirmed');
         reset(snapshot());observedNewUser=false;lastState='AWAITING_REPLY';
-      }catch(e){await pause(id,`Submission needs review: ${String(e.message||e)}. Check the composer/transcript; no automatic retry.`);}
+      }catch(e){
+        if(!clicked){
+          const aborted=await send({type:'ABORT_UNSENT',id,token:claim.token,clicked:false}).catch(()=>null);
+          if(aborted?.ok)return;
+        }
+        await pause(id,`Submission needs review: ${String(e.message||e)}. Check the composer/transcript; no automatic retry.`);
+      }
     }catch(e){if(invalidContext(e)){shutdown();return;}if(!stopped)console.warn('[Auto-Continue]',e);}finally{running=false;}
   }
   chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
