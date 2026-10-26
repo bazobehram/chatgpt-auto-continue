@@ -256,3 +256,13 @@ test('optional Mission Signal cap cannot overwrite separate Local Only numeric p
  assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,7);assert.equal(current.localMaxTurns,7);
  assert.equal(current.missionMaxTurns,13);
 });
+
+
+test('invalid enrollment is rejected without replacing a previously saved key',async()=>{
+ const {h}=await missionHarness();
+ const before=h.storage.missionConnection.enrollment;
+ h.setFetch(async(url)=>url.endsWith('/enrollment/verify')?{ok:false,status:401}:({ok:true,json:async()=>({configured:true})}));
+ const failed=await h.rpc({type:'SET_MISSION_CONNECTION',enrollment:'incorrect-enrollment-credential'});
+ assert.equal(failed.ok,false);assert.match(failed.error,/401/);
+ assert.equal(h.storage.missionConnection.enrollment,before);
+});
