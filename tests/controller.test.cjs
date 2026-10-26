@@ -28,7 +28,7 @@ function harness(){
 function message(role,txt,id){return {role,innerText:txt,getAttribute(k){return {'data-message-author-role':role,'data-message-id':id,'data-complete':'true'}[k]||null},closest:()=>null};}
 async function activate(h){const r=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true,override:''});if(!r.ok)console.log('activation error:',r);assert.equal(r.ok,true);}
 const s=h=>h.rpc({type:'STATUS',id:CHAT});
-test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.6.0');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
+test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.6.1');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
 test('activation never sends against an old answer',async()=>{const h=harness(),c=h.fakePage();await activate(h);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);assert.equal((await s(h)).session.lastHandled,'assistant-1');});
 test('waits for a finished response, sends once, then a next response, respects cap',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();c.page.user('start');c.page.assistant('partial',true);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);
@@ -94,6 +94,7 @@ test('acknowledgment must match the submitted message, not an unrelated new user
 async function missionHarness(){
  const h=harness(),remote={online:true,state:'ACTIVE',missions:new Map(),calls:[]};
  h.setFetch(async(url,options)=>{remote.calls.push(url);if(!remote.online)throw Error('Controlled outage');
+  if(options.method==='POST'&&url.endsWith('/enrollment/verify'))return {ok:true,json:async()=>({configured:true})};
   if(options.method==='POST'&&url.endsWith('/cancel')){const id=url.split('/').at(-2),body=remote.missions.get(id);if(remote.state==='ACTIVE')remote.state='CANCELLED';return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};}
   if(options.method==='POST'){const body=JSON.parse(options.body);remote.missions.set(body.id,body);return {ok:true,json:async()=>({id:body.id,conversation_id:body.conversation_id,state:remote.state})};}
   const id=url.split('/').at(-1),body=remote.missions.get(id);return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};
@@ -254,4 +255,14 @@ test('optional Mission Signal cap cannot overwrite separate Local Only numeric p
  await activate(h);current=(await s(h)).session;
  assert.equal(current.limitMode,'limited');assert.equal(current.maxTurns,7);assert.equal(current.localMaxTurns,7);
  assert.equal(current.missionMaxTurns,13);
+});
+
+
+test('invalid enrollment is rejected without replacing a previously saved key',async()=>{
+ const {h}=await missionHarness();
+ const before=h.storage.missionConnection.enrollment;
+ h.setFetch(async(url)=>url.endsWith('/enrollment/verify')?{ok:false,status:401}:({ok:true,json:async()=>({configured:true})}));
+ const failed=await h.rpc({type:'SET_MISSION_CONNECTION',enrollment:'incorrect-enrollment-credential'});
+ assert.equal(failed.ok,false);assert.match(failed.error,/401/);
+ assert.equal(h.storage.missionConnection.enrollment,before);
 });

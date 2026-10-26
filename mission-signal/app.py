@@ -154,3 +154,10 @@ def cancel(mission_id: UUID, authorization: str | None = Header(default=None)):
         authorized_row(con, mission_id, authorization, 'read')
         con.execute("UPDATE missions SET state='CANCELLED' WHERE id=? AND state='ACTIVE'", (str(mission_id),))
         return public(con.execute('SELECT * FROM missions WHERE id=?', (str(mission_id),)).fetchone())
+
+
+@app.post('/v1/enrollment/verify')
+def verify_enrollment(authorization: str | None = Header(default=None)):
+    """Validate browser enrollment without creating a mission or exposing secrets."""
+    check_token(authorization, digest(KEY_FILE.read_text().strip()))
+    return {'configured': True}

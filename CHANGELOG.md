@@ -1,3 +1,10 @@
+## v0.6.1 — Enrollment verification and actionable connection errors
+
+- Saving a Mission Signal enrollment key now verifies it against the homeserver without registering a mission. Invalid keys are rejected and never replace the previously saved key.
+- The password field deliberately stays empty after saving; this is not evidence that the key was lost.
+- Registration reports HTTP 401 (incorrect enrollment key), HTTP 403 (extension origin rejected), or other HTTP errors instead of only saying unavailable.
+- The service adds a non-mutating authenticated POST /v1/enrollment/verify endpoint. Deploy the server update before reloading the extension.
+
 ## v0.6.0 — Mission lifecycle and durable history
 
 - Separate Local Only and Mission Signal numeric-limit preferences. Local Only retains its Limited/Unlimited controls; Mission Signal defaults to remote-completion-driven continuation, with an optional independent cap in Advanced settings.

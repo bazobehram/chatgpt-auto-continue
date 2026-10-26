@@ -12,7 +12,9 @@ const root=path.resolve(__dirname,'..');
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(__dirname,'mock_chat.html'),'utf8')}));
   await context.route('https://mission-signal.synovaq.org/**',async route=>{
    requests++;if(!online)return route.abort('connectionfailed');const req=route.request();let result;
-   if(req.method()==='POST'&&req.url().endsWith('/cancel')){
+   if(req.method()==='POST'&&req.url().endsWith('/enrollment/verify')){
+     result={configured:true};
+   }else if(req.method()==='POST'&&req.url().endsWith('/cancel')){
      const id=req.url().split('/').at(-2),current=missions.get(id);
      if(current?.state==='ACTIVE')current.state='CANCELLED';
      result=current;
@@ -115,5 +117,5 @@ const root=path.resolve(__dirname,'..');
   await check('Cleanup leaves no armed disposable controllers; connection checks occurred before sends',async()=>{
    for(const c of chats){await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});await c.page.close();assert.equal((await status(c)).session.enabled,false);}assert.ok(requests>15);
   });
- }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.6.0',environment:'isolated Chromium fixtures',results},null,2));}
+ }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.6.1',environment:'isolated Chromium fixtures',results},null,2));}
 })().catch(e=>{console.error(e);process.exitCode=1;});
