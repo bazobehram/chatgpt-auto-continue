@@ -21,7 +21,12 @@ globalThis.MissionSignal=(()=>{
   async function request(path,token,method='GET',body){
     const c=await connection();if(c.endpoint!==ENDPOINT)throw Error('Unsupported Mission Signal endpoint');
     const response=await fetch(ENDPOINT+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000),redirect:'error',cache:'no-store',credentials:'omit'});
-    if(!response.ok)throw Error('Mission Signal request failed');
+    if(!response.ok){
+      if(response.status===401)throw Error('Enrollment key rejected by homeserver (HTTP 401).');
+      if(response.status===403)throw Error('Extension origin rejected by homeserver (HTTP 403).');
+      if(response.status===409)throw Error('Mission identity conflict (HTTP 409).');
+      throw Error('Mission Signal request failed (HTTP '+response.status+').');
+    }
     return response.json();
   }
   function verify(m,r,id){if(r.id!==m.id||r.conversation_id!==id||!['ACTIVE','COMPLETED','CANCELLED'].includes(r.state))throw Error('Mission identity mismatch');}
@@ -43,7 +48,7 @@ globalThis.MissionSignal=(()=>{
     if(!m.registered){
       const c=await connection();if(!c.enrollment)throw Error('Configure Mission Signal before starting a mission.');
       try{const r=await request('/v1/missions',c.enrollment,'POST',{id:m.id,conversation_id:id,read_token:m.readToken});verify(m,r,id);m={...m,registered:true,state:r.state,connection:'connected',lastChecked:Date.now()};await put(id,m);}
-      catch{throw Error('Mission registration unavailable. Nothing sent. Retry when connected.');}
+      catch(e){throw Error('Mission registration failed: '+String(e.message||e)+'. Nothing sent.');}
     }
     return synchronize(id,true);
   }
