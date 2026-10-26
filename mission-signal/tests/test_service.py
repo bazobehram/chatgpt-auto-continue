@@ -110,3 +110,12 @@ def test_complete_then_cancel_keeps_completion(client):
     completion = json.loads((service.DATA / 'credentials' / (body['id'] + '.json')).read_text())['token']
     assert client.post(url + '/complete', headers={'Authorization': 'Bearer ' + completion}).json()['state'] == 'COMPLETED'
     assert client.post(url + '/cancel', headers={'Authorization': 'Bearer ' + body['read_token']}).json()['state'] == 'COMPLETED'
+
+
+def test_enrollment_verification_is_authenticated_and_non_mutating(client):
+    assert client.post('/v1/enrollment/verify').status_code == 401
+    assert client.post('/v1/enrollment/verify', headers={'Authorization': 'Bearer incorrect'}).status_code == 401
+    correct = {'Authorization': 'Bearer ' + service.KEY_FILE.read_text()}
+    assert client.post('/v1/enrollment/verify', headers=correct).json() == {'configured': True}
+    with service.database() as con:
+        assert con.execute('SELECT COUNT(*) FROM missions').fetchone()[0] == 0
