@@ -48,7 +48,7 @@ const root=path.resolve(__dirname,'..');
    await popup.close();popup=null;await b.page.bringToFront();await a.page.evaluate(()=>window.ackDelay=1800);
    await complete(a);await wait(()=>a.sent.length===1,'A background send');await ack(a);
    await a.page.evaluate(()=>window.ackDelay=0);assert.deepEqual(a.sent,['A message']);assert.equal((await status(a)).turns,1);assert.equal((await status(a)).enabled,true);
-   popup=await openPopup(a);assert.equal(await popup.locator('#turns').textContent(),'1 / 2');
+   popup=await openPopup(a);await wait(async()=>await popup.locator('#turns').textContent()==='1 / 2','counter refreshed in popup');
   });
   await check('Unlimited selection preserves count and journal, and exceeds Limited threshold',async()=>{
    const before=await status(a);await popup.locator('#limitMode').selectOption('unlimited');
