@@ -80,9 +80,19 @@ async function dispatch(m,sender){
     return serial(m.id,async()=>{
       const current=await read(m.id);
       if(current?.enabled&&current.ownerTabId!==t.id)throw Error('Only owner tab can cancel.');
-      const remote=await MissionSignal.cancel(m.id); // fail closed: do not claim cancellation on network failure
-      if(current)await write(m.id,{...current,enabled:false,ownerTabId:null,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled and continuation stopped.'});
-      return {ok:true,state:remote.state};
+      // Stop local sends before waiting for the network. Remote cancellation may fail;
+      // the popup must then say so and allow the user to retry.
+      if(current)await write(m.id,{...current,enabled:false,ownerTabId:null,state:'PAUSED',lastError:'Local automation stopped. Confirming remote cancellation…'});
+      try{
+        const remote=await MissionSignal.cancel(m.id);
+        const latest=await read(m.id);
+        if(latest)await write(m.id,{...latest,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled on homeserver.'});
+        return {ok:true,state:remote.state};
+      }catch(error){
+        const latest=await read(m.id);
+        if(latest)await write(m.id,{...latest,enabled:false,state:'PAUSED',lastError:'Local automation stopped, but remote cancellation was not confirmed. Retry Cancel Mission when connected.'});
+        throw error;
+      }
     });
   }
   if(m.type==='RESUME_MISSION'){
