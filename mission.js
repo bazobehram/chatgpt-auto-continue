@@ -86,6 +86,13 @@ globalThis.MissionSignal=(()=>{
     await put(id,next);return next;
   }
   async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);if(m.mode==='mission'&&mode==='local'&&m.registered&&m.state==='ACTIVE')throw Error('Cancel the active mission before switching to Local Only.');await put(id,{...m,mode});}
+  async function verifyEnrollment(enrollment){
+    const candidate=String(enrollment||'').trim();
+    if(!candidate)throw Error('Enter the enrollment key before saving.');
+    const r=await request('/v1/enrollment/verify',candidate,'POST');
+    if(r?.configured!==true)throw Error('Enrollment verification failed.');
+    return true;
+  }
   async function configure(enrollment){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:ENDPOINT,enrollment:String(enrollment||c.enrollment||'').trim()}});}
-  return {get,put,getHistory,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
+  return {get,put,getHistory,verifyEnrollment,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
 })();
