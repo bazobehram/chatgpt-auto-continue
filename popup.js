@@ -135,20 +135,72 @@ $('missionConnectionForm').onsubmit=e=>{e.preventDefault();guard(async()=>{await
 $('settingsForm').onsubmit=e=>{e.preventDefault();guard(async()=>{const next={};for(const k of ['settleSeconds','stallSeconds','watchdogSeconds'])next[k]=$(k).value;next.autoReload=$('autoReload').checked;await ask({type:'SET_SETTINGS',settings:next});await refresh();notify('Settings saved.');})();};
 async function renderTabs(expanded){
   const tabs=await chrome.tabs.query({url:'https://chatgpt.com/*'}),groups=new Map();
-  for(const t of tabs){const chatId=getId(t.url);if(chatId&&chatId!==id){if(!groups.has(chatId))groups.set(chatId,[]);groups.get(chatId).push(t);}}
-  $('tabCount').textContent=String(groups.size);if(!expanded)return;
-  const list=$('tabList');list.replaceChildren();
-  if(!groups.size){const e=document.createElement('div');e.className='muted';e.textContent='No other conversations open.';list.append(e);return;}
-  const entries=await Promise.all([...groups].map(async([chatId,group])=>{const r=await ask({type:'STATUS',id:chatId}),s=r.session,target=group.find(t=>t.id===s?.ownerTabId)||group[0];return {chatId,group,s,mission:r.mission,target,runtime:await probe(s?.ownerTabId,chatId,s)};}));
-  for(const {chatId,group,s,mission:otherMission,target,runtime} of entries){
-    const row=document.createElement('div');row.className='tab-item';row.dataset.conversationId=chatId;
-    const info=document.createElement('div');info.className='tab-info';
-    const title=document.createElement('button');title.className='tab-title';title.textContent=target.title||'ChatGPT conversation';title.title=title.textContent;title.onclick=guard(()=>focusTab(target.id));
-    const progress=document.createElement('span');progress.className='small';progress.textContent=progressOf(s)+(group.length>1?' · '+group.length+' tabs · one owner':'');info.append(title,progress);
-    const state=document.createElement('span');state.className='tab-state';state.textContent=statusOf(s,runtime,otherMission);state.setAttribute('role','status');
-    const action=document.createElement('button');action.className='tab-toggle';action.textContent=s?.enabled?'Pause':'Start';action.setAttribute('aria-label',(s?.enabled?'Pause ':'Start ')+(target.title||chatId));
-    action.onclick=guard(async()=>{action.disabled=true;try{await toggle(chatId,target.id,!s?.enabled);}finally{action.disabled=false;}});
-    row.append(info,state,action);list.append(row);
+  for(const t of tabs){
+    const chatId=getId(t.url);
+    if(chatId&&chatId!==id){
+      if(!groups.has(chatId))groups.set(chatId,[]);
+      groups.get(chatId).push(t);
+    }
+  }
+  $('tabCount').textContent=String(groups.size);
+  if(!expanded)return;
+  const list=$('tabList');
+  if(!groups.size){
+    if(list.childElementCount!==1||!list.firstElementChild?.classList.contains('muted')){
+      const empty=document.createElement('div');empty.className='muted';
+      empty.textContent='No other conversations open.';list.replaceChildren(empty);
+    }
+    return;
+  }
+  const existing=new Map([...list.querySelectorAll('.tab-item')].map(el=>[el.dataset.conversationId,el]));
+  const entries=await Promise.all([...groups].map(async([chatId,group])=>{
+    const r=await ask({type:'STATUS',id:chatId});
+    const s=r.session,target=group.find(t=>t.id===s?.ownerTabId)||group[0];
+    return {chatId,group,s,mission:r.mission,target,runtime:await probe(s?.ownerTabId,chatId,s)};
+  }));
+  const present=new Set();
+  for(let index=0;index<entries.length;index++){
+    const {chatId,group,s,mission:otherMission,target,runtime}=entries[index];
+    present.add(chatId);
+    let row=existing.get(chatId);
+    if(!row){
+      row=document.createElement('div');row.className='tab-item';row.dataset.conversationId=chatId;
+      const info=document.createElement('div');info.className='tab-info';
+      const title=document.createElement('button');title.className='tab-title';
+      const progress=document.createElement('span');progress.className='small';
+      info.append(title,progress);
+      const state=document.createElement('span');state.className='tab-state';state.setAttribute('role','status');
+      const action=document.createElement('button');action.className='tab-toggle';
+      row.append(info,state,action);
+    }
+    const info=row.children[0],title=info.children[0],progress=info.children[1];
+    const state=row.children[1],action=row.children[2];
+    const name=target.title||'ChatGPT conversation';
+    if(title.textContent!==name)title.textContent=name;
+    title.title=name;
+    title.onclick=guard(()=>focusTab(target.id));
+    const progressText=progressOf(s)+(group.length>1?' · '+group.length+' tabs · one owner':'');
+    if(progress.textContent!==progressText)progress.textContent=progressText;
+    const stateText=statusOf(s,runtime,otherMission);
+    if(state.textContent!==stateText)state.textContent=stateText;
+    const actionText=s?.enabled?'Pause':'Start';
+    if(action.textContent!==actionText)action.textContent=actionText;
+    const aria=(s?.enabled?'Pause ':'Start ')+name;
+    if(action.getAttribute('aria-label')!==aria)action.setAttribute('aria-label',aria);
+    if(!action.dataset.pending){
+      action.onclick=guard(async()=>{
+        action.dataset.pending='true';action.disabled=true;
+        try{await toggle(chatId,target.id,!s?.enabled);}
+        finally{delete action.dataset.pending;action.disabled=false;}
+      });
+    }
+    if(list.children[index]!==row)list.insertBefore(row,list.children[index]||null);
+  }
+  for(const [chatId,row] of existing){
+    if(!present.has(chatId))row.remove();
+  }
+  for(const item of [...list.children]){
+    if(!item.classList.contains('tab-item'))item.remove();
   }
 }
 $('tabsPanel').addEventListener('toggle',()=>{if($('tabsPanel').open)guard(()=>renderTabs(true))();});
