@@ -12,7 +12,9 @@ const root=path.resolve(__dirname,'..');
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(__dirname,'mock_chat.html'),'utf8')}));
   await context.route('https://mission-signal.synovaq.org/**',async route=>{
    requests++;if(!online)return route.abort('connectionfailed');const req=route.request();let result;
-   if(req.method()==='POST'&&req.url().endsWith('/cancel')){
+   if(req.method()==='POST'&&req.url().endsWith('/enrollment/verify')){
+     result={configured:true};
+   }else if(req.method()==='POST'&&req.url().endsWith('/cancel')){
      const id=req.url().split('/').at(-2),current=missions.get(id);
      if(current?.state==='ACTIVE')current.state='CANCELLED';
      result=current;
