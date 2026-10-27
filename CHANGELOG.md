@@ -1,3 +1,13 @@
+## v0.7.0 — Local diagnostic journal and stuck-send recovery
+
+- Store a bounded, per-conversation trace of the last 120 state changes and send milestones in Chrome local storage; never upload logs automatically.
+- Advanced Settings → Diagnostics supports copying a diagnostic report or clearing it without changing the active session.
+- Trace send claim, click-ready, confirmed receipt, and pre/post-click failure using event categories only; no prompts, message text, enrollment keys, tokens, or full URLs.
+- A journaled SENDING state older than 45 seconds safely pauses with Needs attention; it never retries an uncertain send.
+- The report stays local until the user explicitly copies and shares it.
+
+**Acceptance gate:** unit + isolated Chromium suites and the real popup behavior must pass before merging.
+
 ## v0.6.1 — Enrollment verification and actionable connection errors
 
 - Saving a Mission Signal enrollment key now verifies it against the homeserver without registering a mission. Invalid keys are rejected and never replace the previously saved key.
