@@ -45,6 +45,16 @@ const root=path.resolve(__dirname,'..');
    assert.match(await p.locator('#modeHint').textContent(),/verified completion/);
    await p.close();
   });
+  await check('Empty chat bootstrap sends Mission instruction once without assistant reply',async()=>{
+   const empty=await newChat();
+   await empty.page.evaluate(()=>document.querySelector('#thread').replaceChildren());
+   await instruction(empty);
+   assert.equal((await sent(empty)).length,1);
+   assert.equal((await status(empty)).session.turns,0);
+   await tick(empty);await empty.page.waitForTimeout(3500);
+   assert.equal((await sent(empty)).length,1);
+   assert.equal((await rpc({type:'SET_SESSION',id:empty.id,tabId:empty.tabId,enabled:false})).ok,true);
+  });
   await check('Refresh and explicit resume never repeat a confirmed instruction',async()=>{
    await a.page.reload();await tick(a);await wait(async()=>(await status(a)).session.enabled===false,'refresh paused');await start(a);await a.page.waitForTimeout(3500);assert.deepEqual(await sent(a),[]);assert.equal((await status(a)).mission.instructionState,'sent');
   });
