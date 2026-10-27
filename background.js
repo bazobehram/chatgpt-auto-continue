@@ -99,7 +99,14 @@ async function dispatch(m,sender){
     if(!validId(m.id))return {ok:true,entries:[]};
     const raw=(await chrome.storage.local.get(diagnosticKey(m.id)))[diagnosticKey(m.id)]||[];
     const session=await read(m.id),mission=await MissionSignal.get(m.id);
-    return {ok:true,version:VERSION,mode:mission.mode,sessionState:session?.state||'IDLE',enabled:!!session?.enabled,entries:raw};
+    return {ok:true,version:VERSION,mode:mission.mode,sessionState:session?.state||'IDLE',enabled:!!session?.enabled,
+      snapshot:{hasSendClaim:!!session?.lastClaim,sendKind:session?.lastClaim?.kind==='instruction'?'instruction':session?.lastClaim?'continuation':'none',
+        waitingSeconds:session?.waitingSince?Math.max(0,Math.round((Date.now()-session.waitingSince)/1000)):0,
+        lastActivitySeconds:session?.lastActivity?Math.max(0,Math.round((Date.now()-session.lastActivity)/1000)):null,
+        hasBaseline:!!session?.baseline,hasOwnerTab:Number.isInteger(session?.ownerTabId),
+        missionInstructionState:mission?.instruction?.state||'none',
+        missionConnection:mission?.connection||'none'},
+      entries:raw};
   }
   if(m.type==='CLEAR_DIAGNOSTICS'){
     if(!validId(m.id))throw Error('Select a conversation.');
