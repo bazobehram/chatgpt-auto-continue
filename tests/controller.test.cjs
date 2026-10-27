@@ -282,3 +282,19 @@ test('diagnostics record bounded state transitions without leaking message text 
  const cleared=await h.rpc({type:'CLEAR_DIAGNOSTICS',id:CHAT});assert.equal(cleared.ok,true);
  const after=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});assert.equal(after.entries.length,0);
 });
+
+
+test('stalled SENDING transitions to review without retrying submission',async()=>{
+ const h=harness();await activate(h);
+ const s0=await h.rpc({type:'STATUS',id:CHAT});
+ const session=s0.session;
+ await h.rpc({type:'TRACE',id:CHAT,event:'send_claimed',detail:'continuation',state:'SENDING'},{id:10,url:URL});
+ h.storage['chat:'+CHAT]={...session,state:'SENDING',enabled:true,updatedAt:1000000};
+ h.updateClock(46000);
+ const result=await h.rpc({type:'STATUS',id:CHAT});
+ assert.equal(result.session.enabled,false);
+ assert.equal(result.session.state,'NEEDS_USER');
+ assert.match(result.session.lastError,/uncertain/);
+ const diag=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.ok(diag.entries.some(e=>e.event==='sending_timeout'));
+});
