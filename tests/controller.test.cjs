@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..');const CHAT='aaaaaaaaaaaa-bbbb-cccc-dddd-
 function harness(){
  let tickListener,extensionMessages,removed,updated, installed,startup;let clock=1000000;let tabList=[{id:10,url:URL}],storage={};
  const listeners={};const clone=x=>structuredClone(x);
- const store={get:async ks=>{if(ks===null)return clone(storage);const keys=Array.isArray(ks)?ks:[ks];return Object.fromEntries(keys.filter(k=>Object.hasOwn(storage,k)).map(k=>[k,clone(storage[k])]))},set:async entries=>{Object.assign(storage,clone(entries));}};
+ const store={get:async ks=>{if(ks===null)return clone(storage);const keys=Array.isArray(ks)?ks:[ks];return Object.fromEntries(keys.filter(k=>Object.hasOwn(storage,k)).map(k=>[k,clone(storage[k])]))},set:async entries=>{Object.assign(storage,clone(entries));},remove:async key=>{delete storage[key];}};
  const chrome={storage:{local:store},alarms:{create:async()=>{},get:async()=>null,onAlarm:{addListener:f=>tickListener=f}},runtime:{onMessage:{addListener:f=>extensionMessages=f},onInstalled:{addListener:f=>installed=f},onStartup:{addListener:f=>startup=f}},tabs:{get:async id=>{const t=tabList.find(t=>t.id===id);if(!t)throw Error('tab missing');return clone(t)},reload:async id=>{listeners.reloaded=id},query:async()=>clone(tabList),sendMessage:async()=>{},onRemoved:{addListener:f=>removed=f},onUpdated:{addListener:f=>updated=f}}};
  const bg={chrome,crypto:require('node:crypto').webcrypto,AbortSignal,fetch:globalThis.fetch,importScripts:file=>vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),bg,{filename:file}),Date:class extends Date {static now(){return clock}},Map,Math,Promise,console,URL:globalThis.URL};vm.createContext(bg);vm.runInContext(fs.readFileSync(path.join(root,'background.js'),'utf8'),bg,{filename:'background.js'});
  const rpc=(msg,tab=null)=>new Promise(resolve=>extensionMessages(msg,tab?{tab:clone(tab)}:{},resolve));
@@ -265,4 +265,20 @@ test('invalid enrollment is rejected without replacing a previously saved key',a
  const failed=await h.rpc({type:'SET_MISSION_CONNECTION',enrollment:'incorrect-enrollment-credential'});
  assert.equal(failed.ok,false);assert.match(failed.error,/401/);
  assert.equal(h.storage.missionConnection.enrollment,before);
+});
+
+
+test('diagnostics record bounded state transitions without leaking message text or secrets',async()=>{
+ const h=harness();await activate(h);
+ const c=h.fakePage();await c.tick();
+ const r=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.equal(r.ok,true);assert.ok(r.entries.length>0);
+ assert.ok(r.entries.every(e=>!JSON.stringify(e).includes('old assistant')));
+ assert.ok(r.entries.every(e=>!JSON.stringify(e).includes('enrollment')));
+ assert.ok(r.entries.some(e=>e.event==='state_change'));
+ await h.rpc({type:'TRACE',id:CHAT,event:'send_failed',detail:'after_click',state:'SENDING'},{id:10,url:URL});
+ const q=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.ok(q.entries.some(e=>e.event==='send_failed'));
+ const cleared=await h.rpc({type:'CLEAR_DIAGNOSTICS',id:CHAT});assert.equal(cleared.ok,true);
+ const after=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});assert.equal(after.entries.length,0);
 });
