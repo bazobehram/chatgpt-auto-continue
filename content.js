@@ -127,7 +127,8 @@
         if(s.userCount>=lastUserCount)observedNewUser=true;
         lastUserCount=s.userCount;lastUserKey=s.userKey;
       }
-      if(!s.assistantKey||!s.assistantSig){if(sess.lastClaim||lastGenerationObserved)await waitForReply(id,sess,cfg,s);return;}
+      const emptyInstruction=mission?.mode==='mission'&&mission.instructionState==='pending'&&s.userCount===0&&!s.assistantKey&&!s.busy&&sess.baseline?.userCount===0&&!sess.baseline?.assistantKey&&!sess.lastClaim;
+      if((!s.assistantKey||!s.assistantSig)&&!emptyInstruction){if(sess.lastClaim||lastGenerationObserved)await waitForReply(id,sess,cfg,s);return;}
       const oldHandled=sess.lastHandled===s.assistantKey;
       const newFromBaseline=!!(sess.baseline && (s.assistantKey!==sess.baseline.assistantKey));
       const kickoff=Boolean(sess.kickoffRequested&&!sess.lastClaim&&sess.baseline?.assistantKey===s.assistantKey);
@@ -137,9 +138,9 @@
         if(sess.lastClaim)await waitForReply(id,sess,cfg,s);
         return;
       }
-      if(s.lastRole!=='assistant'){await progress(id,'AWAITING_REPLY');return;}
-      if(now()-changedAt<cfg.settleSeconds*1000){setTimeout(()=>void cycle(),Math.max(50,cfg.settleSeconds*1000-(now()-changedAt)));await progress(id,'SETTLING');return;}
-      if(!s.finalEvidence){await progress(id,'OBSERVING');return;}
+      if(s.lastRole!=='assistant'&&!emptyInstruction){await progress(id,'AWAITING_REPLY');return;}
+      if(!emptyInstruction&&now()-changedAt<cfg.settleSeconds*1000){setTimeout(()=>void cycle(),Math.max(50,cfg.settleSeconds*1000-(now()-changedAt)));await progress(id,'SETTLING');return;}
+      if(!emptyInstruction&&!s.finalEvidence){await progress(id,'OBSERVING');return;}
       if(s.editorText){await pause(id,'Composer contains a draft. Nothing sent.');return;}
       if(!s.editor){await pause(id,'ChatGPT composer or Send control changed. Nothing sent.');return;}
       if(blocked(s.assistantText)){await pause(id,'ChatGPT reported an error or usage limit.');return;}
@@ -149,7 +150,7 @@
       await progress(id,'READY');
       // IMPORTANT: No click happens until claim is durably persisted.
       await send({type:'TRACE',id,event:'send_preflight',detail:instruction?'instruction':'continuation',state:sess.state}).catch(()=>{});
-      const claim=await send({type:'CLAIM_SEND',id,kickoff,instruction,snapshot:{assistantKey:s.assistantKey,assistantSig:s.assistantSig}});
+      const claim=await send({type:'CLAIM_SEND',id,kickoff,instruction,snapshot:{assistantKey:s.assistantKey,assistantSig:s.assistantSig,emptyChat:emptyInstruction}});
       if(!claim.ok){await send({type:'TRACE',id,event:'claim_denied',detail:claim.reason||'denied',state:sess.state}).catch(()=>{});return;}
       await send({type:'TRACE',id,event:'send_claimed',detail:instruction?'instruction':'continuation',state:'SENDING'}).catch(()=>{});
       let clicked=false;
