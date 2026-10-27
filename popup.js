@@ -203,6 +203,22 @@ async function renderTabs(expanded){
     if(!item.classList.contains('tab-item'))item.remove();
   }
 }
+$('diagnosticsPanel').addEventListener('toggle',()=>{if($('diagnosticsPanel').open)guard(async()=>{
+ const r=await ask({type:'GET_DIAGNOSTICS',id});
+ $('diagnosticsSummary').textContent=r.entries.length+' events · '+r.sessionState;
+})()});
+$('copyDiagnostics').onclick=guard(async()=>{
+ const r=await ask({type:'GET_DIAGNOSTICS',id});
+ const report=JSON.stringify({schema:1,version:r.version,mode:r.mode,sessionState:r.sessionState,enabled:r.enabled,events:r.entries},null,2);
+ await navigator.clipboard.writeText(report);
+ notify('Diagnostic report copied. It contains no chat content or enrollment secrets.');
+});
+$('clearDiagnostics').onclick=guard(async()=>{
+ if(!confirm('Clear diagnostic events for this chat? This will not change the session or mission.'))return;
+ await ask({type:'CLEAR_DIAGNOSTICS',id});
+ $('diagnosticsSummary').textContent='0 events';
+ notify('Diagnostics cleared.');
+});
 $('tabsPanel').addEventListener('toggle',()=>{if($('tabsPanel').open)guard(()=>renderTabs(true))();});
 chrome.storage.onChanged.addListener(scheduleRefresh);
 const popupTimer=setInterval(scheduleRefresh,2500);
