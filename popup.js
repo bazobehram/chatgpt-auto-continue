@@ -209,7 +209,7 @@ $('diagnosticsPanel').addEventListener('toggle',()=>{if($('diagnosticsPanel').op
 })()});
 $('copyDiagnostics').onclick=guard(async()=>{
  const r=await ask({type:'GET_DIAGNOSTICS',id});
- const report=JSON.stringify({schema:1,version:r.version,mode:r.mode,sessionState:r.sessionState,enabled:r.enabled,events:r.entries},null,2);
+ const report=JSON.stringify({schema:1,version:r.version,mode:r.mode,sessionState:r.sessionState,enabled:r.enabled,snapshot:r.snapshot,events:r.entries},null,2);
  await navigator.clipboard.writeText(report);
  notify('Diagnostic report copied. It contains no chat content or enrollment secrets.');
 });
