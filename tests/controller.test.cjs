@@ -298,3 +298,13 @@ test('stalled SENDING transitions to review without retrying submission',async()
  const diag=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
  assert.ok(diag.entries.some(e=>e.event==='sending_timeout'));
 });
+
+
+test('fresh empty chat delivers Mission setup instruction exactly once without prior assistant',async()=>{
+ const {h}=await missionHarness();const c=h.fakePage();c.page.entries.splice(0);
+ await activate(h);await c.tick();h.updateClock(7000);await c.tick();
+ assert.equal(c.page.sent.length,1);assert.match(c.page.sent[0],/Mission Signal instruction/);
+ let result=await s(h);assert.equal(result.mission.instructionState,'sent');
+ assert.equal(result.session.turns,0);
+ await c.tick();h.updateClock(7000);await c.tick();assert.equal(c.page.sent.length,1);
+});
