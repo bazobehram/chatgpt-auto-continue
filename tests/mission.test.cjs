@@ -45,6 +45,16 @@ const root=path.resolve(__dirname,'..');
    assert.match(await p.locator('#modeHint').textContent(),/verified completion/);
    await p.close();
   });
+  await check('Empty chat bootstrap sends Mission instruction once without assistant reply',async()=>{
+   const empty=await newChat();
+   await empty.page.evaluate(()=>document.querySelector('#thread').replaceChildren());
+   await instruction(empty);
+   assert.equal((await sent(empty)).length,1);
+   assert.equal((await status(empty)).session.turns,0);
+   await tick(empty);await empty.page.waitForTimeout(3500);
+   assert.equal((await sent(empty)).length,1);
+   assert.equal((await rpc({type:'SET_SESSION',id:empty.id,tabId:empty.tabId,enabled:false})).ok,true);
+  });
   await check('Refresh and explicit resume never repeat a confirmed instruction',async()=>{
    await a.page.reload();await tick(a);await wait(async()=>(await status(a)).session.enabled===false,'refresh paused');await start(a);await a.page.waitForTimeout(3500);assert.deepEqual(await sent(a),[]);assert.equal((await status(a)).mission.instructionState,'sent');
   });
@@ -117,5 +127,5 @@ const root=path.resolve(__dirname,'..');
   await check('Cleanup leaves no armed disposable controllers; connection checks occurred before sends',async()=>{
    for(const c of chats){await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});await c.page.close();assert.equal((await status(c)).session.enabled,false);}assert.ok(requests>15);
   });
- }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.7.0',environment:'isolated Chromium fixtures',results},null,2));}
+ }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.7.1',environment:'isolated Chromium fixtures',results},null,2));}
 })().catch(e=>{console.error(e);process.exitCode=1;});
