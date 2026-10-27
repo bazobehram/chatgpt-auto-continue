@@ -148,8 +148,10 @@
       if(s.busy)return;
       await progress(id,'READY');
       // IMPORTANT: No click happens until claim is durably persisted.
+      await send({type:'TRACE',id,event:'send_preflight',detail:instruction?'instruction':'continuation',state:sess.state}).catch(()=>{});
       const claim=await send({type:'CLAIM_SEND',id,kickoff,instruction,snapshot:{assistantKey:s.assistantKey,assistantSig:s.assistantSig}});
-      if(!claim.ok)return;
+      if(!claim.ok){await send({type:'TRACE',id,event:'claim_denied',detail:claim.reason||'denied',state:sess.state}).catch(()=>{});return;}
+      await send({type:'TRACE',id,event:'send_claimed',detail:instruction?'instruction':'continuation',state:'SENDING'}).catch(()=>{});
       let clicked=false;
       try{
         if(!getId()||getId()!==id)throw Error('Conversation navigated away');
@@ -180,6 +182,7 @@
         const allowed=await send({type:'CHECK_SEND',id,token:claim.token});
         const final=snapshot();
         if(!allowed.ok||getId()!==id||final.busy||final.editorText!==message||final.assistantSig!==s.assistantSig||!final.submit||final.submit.disabled)throw Error('Paused or conversation changed before click');
+        await send({type:'TRACE',id,event:'send_click_ready',detail:'single_attempt',state:'SENDING'}).catch(()=>{});
         clicked=true; // mark before invoking external UI behavior: click may throw after submission
         final.submit.click();
         // Wait for transcript evidence, not a fixed 450 ms guess. Never click a second time.
@@ -194,8 +197,10 @@
         if(!acknowledged)throw Error('No new submitted user message was observed');
         const confirmed=await send({type:'CONFIRM_SENT',id,token:claim.token});
         if(!confirmed.ok)throw Error('Send clicked but journal not confirmed');
+        await send({type:'TRACE',id,event:'send_confirmed',detail:instruction?'instruction':'continuation',state:'AWAITING_REPLY'}).catch(()=>{});
         reset(snapshot());observedNewUser=false;lastState='AWAITING_REPLY';
       }catch(e){
+        await send({type:'TRACE',id,event:'send_failed',detail:clicked?'after_click':'before_click',state:'SENDING'}).catch(()=>{});
         if(!clicked){
           const aborted=await send({type:'ABORT_UNSENT',id,token:claim.token,clicked:false}).catch(()=>null);
           if(aborted?.ok)return;

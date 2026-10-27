@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.6.1';
+const VERSION = '0.7.0';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -21,7 +21,25 @@ function serial(id, work){
   return next;
 }
 async function read(id){return (await chrome.storage.local.get(keyFor(id)))[keyFor(id)]||null;}
-async function write(id,session){await chrome.storage.local.set({[keyFor(id)]:{...session,updatedAt:Date.now()}});}
+const diagnosticKey=id=>'diagnostics:'+id;
+async function diagnostic(id,event,detail='',state=''){
+  if(!validId(id))return;
+  try{
+    const existing=(await chrome.storage.local.get(diagnosticKey(id)))[diagnosticKey(id)]||[];
+    const safeEvent=String(event).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(0,48);
+    // Strict allowlist: never persist message text, tokens, URLs, prompts, or credentials.
+    const safeDetail=String(detail).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(0,56);
+    const item={time:Date.now(),event:safeEvent,detail:safeDetail,state:String(state).slice(0,30)};
+    if(existing.at(-1)?.event===item.event&&existing.at(-1)?.detail===item.detail&&existing.at(-1)?.state===item.state)return;
+    await chrome.storage.local.set({[diagnosticKey(id)]:[...existing.slice(-119),item]});
+  }catch{}
+}
+async function write(id,session){
+  const old=await read(id);
+  await chrome.storage.local.set({[keyFor(id)]:{...session,updatedAt:Date.now()}});
+  if(old?.state!==session.state||old?.enabled!==session.enabled)
+    await diagnostic(id,'state_change',(old?.state||'NONE')+'_'+(session.enabled?'on':'off'),session.state||'UNKNOWN');
+}
 const fresh=(tabId,override)=>({enabled:true,ownerTabId:tabId,override,turns:0,state:'ARMING',generation:Date.now(),baseline:null,baselineStreaming:false,lastHandled:null,lastClaim:null,kickoffRequested:false,waitingSince:0,lastError:'',lastActivity:Date.now(),recoveryCount:0});
 async function owner(id,sender){
   const s=await read(id);
@@ -62,6 +80,11 @@ async function dispatch(m,sender){
     // Serialize polling with cancel, mode switch and sends: a stale ACTIVE status
     // must never overwrite a terminal mission state.
     const remote=await serial(m.id,async()=>{
+      const stalled=await read(m.id);
+      if(stalled?.enabled&&stalled.state==='SENDING'&&Number.isFinite(stalled.updatedAt)&&Date.now()-stalled.updatedAt>45000){
+        await diagnostic(m.id,'sending_timeout','acknowledgment_uncertain','SENDING');
+        await pause(m.id,'Sending timed out. Submission is uncertain: review the transcript before resuming. No automatic retry.','NEEDS_USER');
+      }
       const result=await MissionSignal.synchronize(m.id);
       if(result.mode==='mission'&&['COMPLETED','CANCELLED'].includes(result.state)){
         const current=await read(m.id);
@@ -71,6 +94,20 @@ async function dispatch(m,sender){
       return result;
     });
     return {ok:true,callerTabId:sender.tab?.id,settings:await config(),session:await sessionStatus(m.id),mission:MissionSignal.summary(remote),missionHistory:await MissionSignal.getHistory(m.id),noticeHistory:await noticeHistory(m.id),version:VERSION};
+  }
+  if(m.type==='GET_DIAGNOSTICS'){
+    if(!validId(m.id))return {ok:true,entries:[]};
+    const raw=(await chrome.storage.local.get(diagnosticKey(m.id)))[diagnosticKey(m.id)]||[];
+    const session=await read(m.id),mission=await MissionSignal.get(m.id);
+    return {ok:true,version:VERSION,mode:mission.mode,sessionState:session?.state||'IDLE',enabled:!!session?.enabled,entries:raw};
+  }
+  if(m.type==='CLEAR_DIAGNOSTICS'){
+    if(!validId(m.id))throw Error('Select a conversation.');
+    await chrome.storage.local.remove(diagnosticKey(m.id));return {ok:true};
+  }
+  if(m.type==='TRACE'){
+    if(!validId(m.id)||!sender.tab||!tabMatches(sender.tab.url,m.id))return {ok:false};
+    await diagnostic(m.id,m.event,m.detail,m.state);return {ok:true};
   }
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){

@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..');const CHAT='aaaaaaaaaaaa-bbbb-cccc-dddd-
 function harness(){
  let tickListener,extensionMessages,removed,updated, installed,startup;let clock=1000000;let tabList=[{id:10,url:URL}],storage={};
  const listeners={};const clone=x=>structuredClone(x);
- const store={get:async ks=>{if(ks===null)return clone(storage);const keys=Array.isArray(ks)?ks:[ks];return Object.fromEntries(keys.filter(k=>Object.hasOwn(storage,k)).map(k=>[k,clone(storage[k])]))},set:async entries=>{Object.assign(storage,clone(entries));}};
+ const store={get:async ks=>{if(ks===null)return clone(storage);const keys=Array.isArray(ks)?ks:[ks];return Object.fromEntries(keys.filter(k=>Object.hasOwn(storage,k)).map(k=>[k,clone(storage[k])]))},set:async entries=>{Object.assign(storage,clone(entries));},remove:async key=>{delete storage[key];}};
  const chrome={storage:{local:store},alarms:{create:async()=>{},get:async()=>null,onAlarm:{addListener:f=>tickListener=f}},runtime:{onMessage:{addListener:f=>extensionMessages=f},onInstalled:{addListener:f=>installed=f},onStartup:{addListener:f=>startup=f}},tabs:{get:async id=>{const t=tabList.find(t=>t.id===id);if(!t)throw Error('tab missing');return clone(t)},reload:async id=>{listeners.reloaded=id},query:async()=>clone(tabList),sendMessage:async()=>{},onRemoved:{addListener:f=>removed=f},onUpdated:{addListener:f=>updated=f}}};
  const bg={chrome,crypto:require('node:crypto').webcrypto,AbortSignal,fetch:globalThis.fetch,importScripts:file=>vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),bg,{filename:file}),Date:class extends Date {static now(){return clock}},Map,Math,Promise,console,URL:globalThis.URL};vm.createContext(bg);vm.runInContext(fs.readFileSync(path.join(root,'background.js'),'utf8'),bg,{filename:'background.js'});
  const rpc=(msg,tab=null)=>new Promise(resolve=>extensionMessages(msg,tab?{tab:clone(tab)}:{},resolve));
@@ -28,7 +28,7 @@ function harness(){
 function message(role,txt,id){return {role,innerText:txt,getAttribute(k){return {'data-message-author-role':role,'data-message-id':id,'data-complete':'true'}[k]||null},closest:()=>null};}
 async function activate(h){const r=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true,override:''});if(!r.ok)console.log('activation error:',r);assert.equal(r.ok,true);}
 const s=h=>h.rpc({type:'STATUS',id:CHAT});
-test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.6.1');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
+test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.7.0');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
 test('activation never sends against an old answer',async()=>{const h=harness(),c=h.fakePage();await activate(h);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);assert.equal((await s(h)).session.lastHandled,'assistant-1');});
 test('waits for a finished response, sends once, then a next response, respects cap',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();c.page.user('start');c.page.assistant('partial',true);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);
@@ -265,4 +265,36 @@ test('invalid enrollment is rejected without replacing a previously saved key',a
  const failed=await h.rpc({type:'SET_MISSION_CONNECTION',enrollment:'incorrect-enrollment-credential'});
  assert.equal(failed.ok,false);assert.match(failed.error,/401/);
  assert.equal(h.storage.missionConnection.enrollment,before);
+});
+
+
+test('diagnostics record bounded state transitions without leaking message text or secrets',async()=>{
+ const h=harness();await activate(h);
+ const c=h.fakePage();await c.tick();
+ const r=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.equal(r.ok,true);assert.ok(r.entries.length>0);
+ assert.ok(r.entries.every(e=>!JSON.stringify(e).includes('old assistant')));
+ assert.ok(r.entries.every(e=>!JSON.stringify(e).includes('enrollment')));
+ assert.ok(r.entries.some(e=>e.event==='state_change'));
+ await h.rpc({type:'TRACE',id:CHAT,event:'send_failed',detail:'after_click',state:'SENDING'},{id:10,url:URL});
+ const q=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.ok(q.entries.some(e=>e.event==='send_failed'));
+ const cleared=await h.rpc({type:'CLEAR_DIAGNOSTICS',id:CHAT});assert.equal(cleared.ok,true);
+ const after=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});assert.equal(after.entries.length,0);
+});
+
+
+test('stalled SENDING transitions to review without retrying submission',async()=>{
+ const h=harness();await activate(h);
+ const s0=await h.rpc({type:'STATUS',id:CHAT});
+ const session=s0.session;
+ await h.rpc({type:'TRACE',id:CHAT,event:'send_claimed',detail:'continuation',state:'SENDING'},{id:10,url:URL});
+ h.storage['chat:'+CHAT]={...session,state:'SENDING',enabled:true,updatedAt:1000000};
+ h.updateClock(46000);
+ const result=await h.rpc({type:'STATUS',id:CHAT});
+ assert.equal(result.session.enabled,false);
+ assert.equal(result.session.state,'NEEDS_USER');
+ assert.match(result.session.lastError,/uncertain/);
+ const diag=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.ok(diag.entries.some(e=>e.event==='sending_timeout'));
 });
