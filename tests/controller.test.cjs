@@ -298,3 +298,13 @@ test('stalled SENDING transitions to review without retrying submission',async()
  const diag=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
  assert.ok(diag.entries.some(e=>e.event==='sending_timeout'));
 });
+
+
+test('diagnostics snapshot distinguishes waiting without a send claim',async()=>{
+ const h=harness();await activate(h);
+ const r=await h.rpc({type:'GET_DIAGNOSTICS',id:CHAT});
+ assert.equal(r.ok,true);assert.equal(r.snapshot.hasSendClaim,false);
+ assert.equal(r.snapshot.sendKind,'none');assert.equal(r.snapshot.hasBaseline,false);
+ assert.equal(r.snapshot.waitingSeconds,0);
+ assert.ok(!JSON.stringify(r.snapshot).includes('token'));
+});
