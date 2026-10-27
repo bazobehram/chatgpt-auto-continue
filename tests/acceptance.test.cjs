@@ -89,6 +89,22 @@ const root=path.resolve(__dirname,'..');
    await finish(a);await a.page.waitForTimeout(3500);assert.deepEqual(a.sent,[]);assert.equal(await popup.locator('#status').textContent(),'Paused');
    await popup.close();await a.page.close();
   });
+  await check('8 Diagnostics popup shows journal and clears only this conversation',async()=>{
+   const a=await newChat(),popup=await context.newPage();
+   await a.page.bringToFront();await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+   await popup.locator('#diagnosticsPanel').evaluate(e=>e.open=true);
+   await popup.locator('#diagnosticsPanel').dispatchEvent('toggle');
+   await popup.getByRole('button',{name:'Start',exact:true}).click();
+   await wait(async()=>(await status(a)).enabled===true,'diagnostic test started');
+   await popup.getByRole('button',{name:'Pause',exact:true}).click();
+   await wait(async()=>(await status(a)).enabled===false,'diagnostic test paused');
+   const report=await control.evaluate(id=>chrome.runtime.sendMessage({type:'GET_DIAGNOSTICS',id}),a.id);
+   assert.ok(report.entries.some(e=>e.event==='state_change'));
+   popup.on('dialog',d=>d.accept());
+   await popup.locator('#clearDiagnostics').click();
+   await wait(async()=>((await control.evaluate(id=>chrome.runtime.sendMessage({type:'GET_DIAGNOSTICS',id}),a.id)).entries.length===0),'diagnostics cleared');
+   await popup.close();await a.page.close();
+  });
   await check('Cleanup: no armed disposable sessions, no remaining QA tabs, no page errors',async()=>{
    // Close events are awaited through storage checks; counters are not used as proof of safety.
    for(const c of chats){const s=await status(c);assert.equal(s.enabled,false,`still armed: ${c.id}`);assert.notEqual(s.state,'SENDING');}
