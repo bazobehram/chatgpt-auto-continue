@@ -286,8 +286,9 @@ async function dispatch(m,sender){
     if(m.type==='CLAIM_SEND'){
       if(!['OBSERVING','GENERATING','SETTLING','READY','AWAITING_REPLY'].includes(s.state))return {ok:false,reason:'not ready'};
       const snapshot=m.snapshot||{};
-      if(!snapshot.assistantKey||!snapshot.assistantSig)return {ok:false,reason:'missing assistant'};
       const instruction=Boolean(m.instruction);
+      const emptyBootstrap=instruction&&snapshot.emptyChat===true&&s.baseline?.userCount===0&&!s.baseline?.assistantKey&&!s.lastClaim;
+      if((!snapshot.assistantKey||!snapshot.assistantSig)&&!emptyBootstrap)return {ok:false,reason:'missing assistant'};
       const kick=Boolean(m.kickoff&&s.kickoffRequested&&!s.lastClaim&&s.baseline?.assistantKey===snapshot.assistantKey);
       if(!instruction&&((s.lastHandled===snapshot.assistantKey&&!kick)||s.lastClaim?.assistantKey===snapshot.assistantKey))return {ok:false,reason:'already handled'};
       if(!instruction&&(s.limitMode||(await config()).limitMode)!=='unlimited'&&(s.turns||0)>=(s.maxTurns||(await config()).maxTurns)){await pause(m.id,'Maximum auto-continue count reached.');return {ok:false,reason:'limit reached'};}
