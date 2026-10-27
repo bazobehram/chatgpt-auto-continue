@@ -80,6 +80,11 @@ async function dispatch(m,sender){
     // Serialize polling with cancel, mode switch and sends: a stale ACTIVE status
     // must never overwrite a terminal mission state.
     const remote=await serial(m.id,async()=>{
+      const stalled=await read(m.id);
+      if(stalled?.enabled&&stalled.state==='SENDING'&&Number.isFinite(stalled.updatedAt)&&Date.now()-stalled.updatedAt>45000){
+        await diagnostic(m.id,'sending_timeout','acknowledgment_uncertain','SENDING');
+        await pause(m.id,'Sending timed out. Submission is uncertain: review the transcript before resuming. No automatic retry.','NEEDS_USER');
+      }
       const result=await MissionSignal.synchronize(m.id);
       if(result.mode==='mission'&&['COMPLETED','CANCELLED'].includes(result.state)){
         const current=await read(m.id);
