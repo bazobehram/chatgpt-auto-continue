@@ -121,7 +121,7 @@ $('dismissReview').onclick=guard(async()=>{
   await refresh();notify('Approval warning dismissed. No message was sent.');
 });
 $('reviewContinue').onclick=guard(async()=>{
-  if(!confirm('I have completed the requested human action and reviewed the latest assistant response. Authorize exactly ONE continuation of this same reply?'))return;
+  if(!confirm('I reviewed the latest reply and completed the required human action, or verified that no external action is needed. Send exactly ONE continuation? This does not grant any external approval.'))return;
   await ask({type:'REQUEST_REVIEW_CONTINUE',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One reviewed continuation authorized. No duplicate sends.');
 });
 $('kickoff').onclick=guard(async()=>{await saveMessage();await ask({type:'REQUEST_KICKOFF',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One continuation requested.');});
