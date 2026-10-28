@@ -130,7 +130,7 @@ async function dispatch(m,sender){
       try{
         const remote=await MissionSignal.cancel(m.id);
         const latest=await read(m.id);
-        if(latest)await write(m.id,{...latest,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled on homeserver.'});
+        if(latest)await write(m.id,{...latest,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled on homeserver.'});
         return {ok:true,state:remote.state};
       }catch(error){
         const latest=await read(m.id);
@@ -173,8 +173,8 @@ async function dispatch(m,sender){
           const previous=await read(m.id);
           // Mode changes clear ONLY obsolete human-review UI state. They never
           // clear an uncertain send journal or fabricate a completed mission.
-          if(previous?.reviewRequired&&previous.state==='NEEDS_USER')
-            await write(m.id,{...previous,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastError:''});
+          if(previous?.reviewRequired)
+            await write(m.id,{...previous,state:previous.state==='NEEDS_USER'?'PAUSED':previous.state,reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastError:previous.state==='NEEDS_USER'?'':previous.lastError});
         }
       }
       return {ok:true};});
