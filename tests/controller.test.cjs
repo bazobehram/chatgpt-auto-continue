@@ -308,3 +308,21 @@ test('fresh empty chat delivers Mission setup instruction exactly once without p
  assert.equal(result.session.turns,0);
  await c.tick();h.updateClock(7000);await c.tick();assert.equal(c.page.sent.length,1);
 });
+
+
+test('NEEDS_USER resume does not resend until explicit review, then sends exactly once',async()=>{
+ const h=harness(),c=h.fakePage();c.page.finish('Human approval required.');
+ await activate(h);await c.tick();
+ h.storage['chat:'+CHAT].lastClaim={assistantKey:'earlier-assistant',assistantSig:'earlier',kind:'continuation',token:'already-confirmed'};
+ const paused=await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ assert.equal(paused.ok,true);
+ assert.equal((await s(h)).session.reviewRequired,true);
+ await activate(h);await c.tick();h.updateClock(8000);await c.tick();
+ assert.equal(c.page.sent.length,0);
+ const accepted=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(accepted.ok,true);
+ await c.tick();h.updateClock(7000);await c.tick();
+ assert.equal(c.page.sent.length,1);assert.equal(c.page.sent[0],'go');
+ assert.equal((await s(h)).session.reviewRequired,false);
+ await c.tick();h.updateClock(7000);await c.tick();assert.equal(c.page.sent.length,1);
+});
