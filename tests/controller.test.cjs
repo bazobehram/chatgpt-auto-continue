@@ -384,3 +384,14 @@ test('uncertain delivery warnings are not dismissible through approval override'
  assert.equal((await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10})).ok,false);
  assert.equal((await s(h)).session.state,'NEEDS_USER');
 });
+
+
+test('confirmed Mission cancellation and switching to Local Only remove obsolete review state',async()=>{
+ const {h}=await missionHarness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ assert.equal((await s(h)).session.reviewRequired,true);
+ assert.equal((await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10})).ok,true);
+ let st=await s(h);assert.equal(st.session.state,'CANCELLED');assert.equal(st.session.reviewRequired,false);
+ assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
+ st=await s(h);assert.equal(st.mission.mode,'local');assert.equal(st.session.reviewRequired,false);
+});
