@@ -3,7 +3,7 @@
 - Starting a new Mission Signal mission clears the previous session's approval flag, old review key, stale send journal, and outdated warning without deleting mission history.
 - Pending setup instructions are not blocked by approval, completion, or usage-limit words in an older assistant reply. Visible ChatGPT dialogs and login/verification requirements are still respected.
 - Changing completion modes while paused clears outdated *human-review* warnings, not uncertain-send safety stops.
-- Paused human-approval warnings have **Dismiss approval warning** with a confirmation; dismissing never sends or approves anything. It records the exact assistant reply as handled so Start does not trigger the same old warning again.
+- Paused human-approval warnings show **Continue after review** directly, without pressing Start; confirming atomically arms one continuation after checking the current assistant reply and any draft. Ordinary Start is disabled until the warning is resolved.\n- Paused human-approval warnings have **Dismiss approval warning** with a confirmation; dismissing never sends or approves anything. It records the exact assistant reply as handled so Start does not trigger the same old warning again.
 - Existing warnings from v0.7.2 are supported through a content-only reply-identity probe (no message text or credentials).
 - Tests cover old-approval → new mission, dismissal across restart, mode changes, uncertain-send protection, and isolated Chromium UI.
 
