@@ -84,6 +84,27 @@ const root=path.resolve(__dirname,'..');
    assert.equal((await sent(reviewed)).length,before);
    await rpc({type:'SET_SESSION',id:reviewed.id,tabId:reviewed.tabId,enabled:false});
   });
+  await check('Paused approval offers direct reviewed continuation without Start and sends once',async()=>{
+   const reviewed=await newChat();
+   await instruction(reviewed);
+   await reviewed.page.evaluate(()=>mock.assistant('Human approval required.',false));
+   await tick(reviewed);
+   await wait(async()=>(await status(reviewed)).session.state==='NEEDS_USER','approval pause before review');
+   const popup=await context.newPage();
+   popup.on('dialog',d=>d.accept());
+   await reviewed.page.bringToFront();await popup.goto(popupUrl);
+   await wait(async()=>await popup.locator('#reviewContinue').isVisible(),'direct reviewed continuation visible');
+   await wait(async()=>await popup.locator('#toggleSession').isDisabled(),'Start disabled during approval');
+   const before=(await sent(reviewed)).length;
+   await popup.locator('#reviewContinue').click();
+   await wait(async()=>((await sent(reviewed)).length===before+1),'reviewed single send');
+   assert.equal((await sent(reviewed)).length,before+1);
+   assert.equal((await status(reviewed)).session.reviewRequired,false);
+   await reviewed.page.waitForTimeout(3600);
+   assert.equal((await sent(reviewed)).length,before+1);
+   await popup.close();
+   await rpc({type:'SET_SESSION',id:reviewed.id,tabId:reviewed.tabId,enabled:false});
+  });
   await check('Refresh and explicit resume never repeat a confirmed instruction',async()=>{
    await a.page.reload();await tick(a);await wait(async()=>(await status(a)).session.enabled===false,'refresh paused');await start(a);await a.page.waitForTimeout(3500);assert.deepEqual(await sent(a),[]);assert.equal((await status(a)).mission.instructionState,'sent');
   });
