@@ -74,6 +74,8 @@ function paint(){
   const descriptions={ARMING:'Reading the current conversation…',OBSERVING:'Watching for the next finished reply.',GENERATING:'ChatGPT is working. Waiting for completion.',SETTLING:'Checking that the reply has finished.',READY:'Reply finished. Checking send safeguards.',SENDING:'Verifying continuation submission…',AWAITING_REPLY:'Continuation sent. Waiting for a reply.',RECOVERING:'Recovery requires your review.'};
   $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':mission?.state==='CANCELLED'?'Mission cancelled. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):'Automation is paused. Start when you are ready.';
   $('lastError').hidden=remoteDone||!session?.lastError;$('lastError').textContent=remoteDone?'':session?.lastError||'';$('openOwner').hidden=!other;
+  $('dismissReviewRow').hidden=!session?.reviewRequired||Boolean(session?.enabled)||session?.state!=='NEEDS_USER'||other;
+  $('dismissReview').disabled=saving;
   $('reviewResumeRow').hidden=!session?.reviewRequired||!session?.enabled||other||remoteDone;
   $('reviewContinue').disabled=saving||!health||!['OBSERVING','AWAITING_REPLY'].includes(state)||Boolean(session?.reviewOverrideKey);
   $('toggleSession').disabled=!id||other||saving||remoteDone||(mission?.mode==='mission'&&mission.state==='CANCELLED');$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':'Start';$('toggleSession').classList.toggle('danger',on);
@@ -112,6 +114,11 @@ $('scope').addEventListener('change',guard(async()=>{const next=$('scope').value
 $('restore').onclick=guard(async()=>{await ask({type:'SAVE_MESSAGE',id,tabId:tab.id,override:''});dirty=false;$('message').value=settings.message;await refresh();notify('Using global default.');});
 $('limitMode').addEventListener('change',guard(saveLimit));$('maxTurns').addEventListener('change',guard(saveLimit));
 $('toggleSession').onclick=guard(async()=>{if(active())await toggle(id,tab.id,false);else{await saveMessage();await toggle(id,tab.id,true);}});
+$('dismissReview').onclick=guard(async()=>{
+  if(!confirm('Dismiss the outdated approval warning? This does NOT grant permission, complete an external action, or send a message.'))return;
+  await ask({type:'DISMISS_REVIEW',id,tabId:tab.id});
+  await refresh();notify('Approval warning dismissed. No message was sent.');
+});
 $('reviewContinue').onclick=guard(async()=>{
   if(!confirm('I have completed the requested human action and reviewed the latest assistant response. Authorize exactly ONE continuation of this same reply?'))return;
   await ask({type:'REQUEST_REVIEW_CONTINUE',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One reviewed continuation authorized.');
