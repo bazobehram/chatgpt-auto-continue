@@ -476,3 +476,21 @@ test('Legacy PAUSED review flag cannot be discarded by Start or Resume and suppo
  const dismissed=await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10});assert.equal(dismissed.ok,true);
  assert.equal((await s(h)).session.reviewRequired,false);
 });
+
+
+test('resumed observation never claims a fresh submission and retains confirmed send journal',async()=>{
+ const {h}=await missionHarness();const c=await deliverInstruction(h);
+ const before=(await s(h)).session;assert.equal(before.sentInCurrentActivation,true);
+ assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false})).ok,true);
+ assert.equal((await h.rpc({type:'RESUME_MISSION',id:CHAT,tabId:10})).ok,true);
+ const after=(await s(h)).session;
+ assert.equal(after.sentInCurrentActivation,false);assert.equal(after.state,'ARMING');
+ assert.equal(after.lastClaim.token,before.lastClaim.token);
+ await c.tick();h.updateClock(7500);await c.tick();assert.equal(c.page.sent.length,1);
+});
+
+test('obsolete review command is unavailable and cannot bypass explicit recovery checks',async()=>{
+ const h=harness();await activate(h);await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ const result=await h.rpc({type:'START_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(result.ok,false);assert.equal((await s(h)).session.state,'NEEDS_USER');
+});
