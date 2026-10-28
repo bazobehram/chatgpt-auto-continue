@@ -279,6 +279,38 @@ async function dispatch(m,sender){
       return {ok:true};
     });
   }
+  if(m.type==='START_REVIEW_CONTINUE'){
+    if(!validId(m.id))throw Error('Open a saved conversation.');
+    const tab=await chrome.tabs.get(Number(m.tabId));
+    if(!tabMatches(tab.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const current=await read(m.id);
+      if(!current||current.enabled||current.state!=='NEEDS_USER'||!current.reviewRequired)
+        throw Error('Only a paused human-review session can be continued this way.');
+      if(!current.lastClaim||!['instruction','continuation'].includes(current.lastClaim.kind))
+        throw Error('No confirmed previous send journal. Review the transcript and continue manually.');
+      let identity;
+      try{identity=await chrome.tabs.sendMessage(tab.id,{type:'REPLY_IDENTITY'});}
+      catch{throw Error('Conversation controller unavailable. Refresh this tab before trying again.');}
+      if(!identity?.ok||identity.id!==m.id||identity.busy||identity.lastRole!=='assistant'||!identity.assistantKey||identity.hasDraft)
+        throw Error('A stable assistant reply and an empty composer are required.');
+      if(current.reviewReplyKey&&identity.assistantKey!==current.reviewReplyKey)
+        throw Error('The reply changed since the review warning. Inspect the transcript and restart safely.');
+      const mission=await MissionSignal.synchronize(m.id,true);
+      if(mission.mode==='mission'&&(mission.state!=='ACTIVE'||mission.instruction?.state!=='sent'))
+        throw Error('Mission must be active and its setup instruction must already be delivered.');
+      const defaults=await config();
+      if((current.limitMode||defaults.limitMode)!=='unlimited'&&(current.turns||0)>=(current.maxTurns||defaults.maxTurns))
+        throw Error('Continuation safety cap reached. Adjust it while paused.');
+      await write(m.id,{...current,enabled:true,ownerTabId:tab.id,state:'ARMING',
+        documentId:null,baseline:null,baselineStreaming:false,kickoffRequested:false,
+        reviewRequired:true,reviewOverrideKey:identity.assistantKey,lastError:'',
+        generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        waitingSince:0,lastActivity:Date.now(),recoveryCount:0});
+      await diagnostic(m.id,'review_continuation_requested','explicit_paused_confirmation','ARMING');
+      return {ok:true};
+    });
+  }
   if(m.type==='REQUEST_REVIEW_CONTINUE'){
     if(!validId(m.id))throw Error('Open a saved conversation.');
     const t=await chrome.tabs.get(Number(m.tabId));
