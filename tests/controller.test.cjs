@@ -2,10 +2,10 @@
 const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const vm=require('node:vm');
 const root=path.resolve(__dirname,'..');const CHAT='aaaaaaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';const URL=`https://chatgpt.com/c/${CHAT}`;
 function harness(){
- let tickListener,extensionMessages,removed,updated, installed,startup;let clock=1000000;let tabList=[{id:10,url:URL}],storage={};
+ let tickListener,extensionMessages,removed,updated, installed,startup;let clock=1000000;let tabMessage=async()=>({ok:false});let tabList=[{id:10,url:URL}],storage={};
  const listeners={};const clone=x=>structuredClone(x);
  const store={get:async ks=>{if(ks===null)return clone(storage);const keys=Array.isArray(ks)?ks:[ks];return Object.fromEntries(keys.filter(k=>Object.hasOwn(storage,k)).map(k=>[k,clone(storage[k])]))},set:async entries=>{Object.assign(storage,clone(entries));},remove:async key=>{delete storage[key];}};
- const chrome={storage:{local:store},alarms:{create:async()=>{},get:async()=>null,onAlarm:{addListener:f=>tickListener=f}},runtime:{onMessage:{addListener:f=>extensionMessages=f},onInstalled:{addListener:f=>installed=f},onStartup:{addListener:f=>startup=f}},tabs:{get:async id=>{const t=tabList.find(t=>t.id===id);if(!t)throw Error('tab missing');return clone(t)},reload:async id=>{listeners.reloaded=id},query:async()=>clone(tabList),sendMessage:async()=>{},onRemoved:{addListener:f=>removed=f},onUpdated:{addListener:f=>updated=f}}};
+ const chrome={storage:{local:store},alarms:{create:async()=>{},get:async()=>null,onAlarm:{addListener:f=>tickListener=f}},runtime:{onMessage:{addListener:f=>extensionMessages=f},onInstalled:{addListener:f=>installed=f},onStartup:{addListener:f=>startup=f}},tabs:{get:async id=>{const t=tabList.find(t=>t.id===id);if(!t)throw Error('tab missing');return clone(t)},reload:async id=>{listeners.reloaded=id},query:async()=>clone(tabList),sendMessage:async(id,msg)=>tabMessage(id,msg),onRemoved:{addListener:f=>removed=f},onUpdated:{addListener:f=>updated=f}}};
  const bg={chrome,crypto:require('node:crypto').webcrypto,AbortSignal,fetch:globalThis.fetch,importScripts:file=>vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),bg,{filename:file}),Date:class extends Date {static now(){return clock}},Map,Math,Promise,console,URL:globalThis.URL};vm.createContext(bg);vm.runInContext(fs.readFileSync(path.join(root,'background.js'),'utf8'),bg,{filename:'background.js'});
  const rpc=(msg,tab=null)=>new Promise(resolve=>extensionMessages(msg,tab?{tab:clone(tab)}:{},resolve));
  function updateClock(ms){clock+=ms;}
@@ -20,6 +20,7 @@ function harness(){
    let onTick;const contentChrome={runtime:{sendMessage:async m=>rpc(m,tab),onMessage:{addListener:f=>onTick=f}}};
    const ctx={chrome:contentChrome,document:doc,location:{pathname:`/c/${chat}`,href:tab.url},window:{addEventListener:()=>{}},Date:class extends Date {static now(){return clock}},console,Math,Promise,HTMLTextAreaElement:classT,Event:class {constructor(){}},InputEvent:class {},MutationObserver:class{observe(){}},setInterval:()=>3,setTimeout:(f)=>{setImmediate(f);return 5}};
    vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(root,'content.js'),'utf8'),ctx,{filename:'content.js'});
+   tabMessage=(id,msg)=>new Promise(resolve=>{if(id===tab.id)onTick(msg,null,resolve);else resolve({ok:false});});
    async function tick(){await new Promise(resolve=>onTick({type:'TICK'},null,resolve));}
    return {page,tick};
  }
@@ -394,4 +395,47 @@ test('confirmed Mission cancellation and switching to Local Only remove obsolete
  let st=await s(h);assert.equal(st.session.state,'CANCELLED');assert.equal(st.session.reviewRequired,false);
  assert.equal((await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'local'})).ok,true);
  st=await s(h);assert.equal(st.mission.mode,'local');assert.equal(st.session.reviewRequired,false);
+});
+
+
+test('paused NEEDS_USER continues directly after explicit review, once, without requiring Start',async()=>{
+ const h=harness(),c=h.fakePage();await activate(h);await c.tick();
+ h.storage['chat:'+CHAT].lastClaim={assistantKey:'prior-assistant',assistantSig:'prior',kind:'continuation',token:'verified-before-approval'};
+ c.page.finish('Human approval required.');
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER',reviewReplyKey:'assistant-1'},h.owner);
+ assert.equal((await s(h)).session.enabled,false);
+ const approved=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(approved.ok,true);assert.equal(approved.started,true);
+ assert.equal((await s(h)).session.state,'ARMING');
+ await c.tick();h.updateClock(7200);await c.tick();
+ assert.deepEqual(c.page.sent,['go']);
+ assert.equal((await s(h)).session.reviewRequired,false);
+ await c.tick();h.updateClock(7200);await c.tick();assert.deepEqual(c.page.sent,['go']);
+});
+
+test('paused review confirmation refuses draft or changed assistant reply without sending',async()=>{
+ const h=harness(),c=h.fakePage();await activate(h);await c.tick();
+ h.storage['chat:'+CHAT].lastClaim={assistantKey:'previous-answer',kind:'continuation',token:'previous-send'};
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER',reviewReplyKey:'assistant-1'},h.owner);
+ c.page.draft('draft not ready');
+ let result=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(result.ok,false);assert.equal((await s(h)).session.enabled,false);
+ c.page.draft('');c.page.assistant('This is a different assistant response.');
+ result=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(result.ok,false);assert.equal((await s(h)).session.enabled,false);
+ assert.deepEqual(c.page.sent,[]);
+});
+
+test('mission human approval immediately after setup instruction supports reviewed continuation',async()=>{
+ const {h}=await missionHarness();const c=await deliverInstruction(h);
+ c.page.assistant('Human approval required.',false);
+ await c.tick();h.updateClock(7000);await c.tick();
+ let before=await s(h);assert.equal(before.session.state,'NEEDS_USER');
+ assert.equal(before.session.lastClaim.kind,'instruction');
+ assert.equal(before.mission.instructionState,'sent');
+ const resumed=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(resumed.ok,true);assert.equal(resumed.started,true);
+ await c.tick();h.updateClock(7500);await c.tick();
+ assert.equal(c.page.sent.length,2);assert.equal(c.page.sent[1],'go');
+ await c.tick();assert.equal(c.page.sent.length,2);
 });
