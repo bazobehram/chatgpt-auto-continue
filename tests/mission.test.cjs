@@ -41,8 +41,8 @@ const root=path.resolve(__dirname,'..');
   await check('Registration and one automatically acknowledged instruction; no secrets in chat',async()=>{
    await instruction(a);const text=(await sent(a))[0],s=await status(a);assert.match(text,/mission-signal complete/);assert.ok(!text.includes('fixture-secret-only'));assert.equal(s.session.turns,0);assert.equal(missions.size,1);
    const p=await context.newPage();await a.page.bringToFront();await p.goto(popupUrl);
-   assert.equal(await p.locator('#limitCard').isHidden(),true);
-   assert.match(await p.locator('#modeHint').textContent(),/verified completion/);
+   await wait(async()=>await p.locator('#limitCard').isHidden(),'Mission Signal limit panel rendered');
+   await wait(async()=>/verified completion/.test(await p.locator('#modeHint').textContent()),'Mission Signal hint rendered');
    await p.close();
   });
   await check('Empty chat bootstrap sends Mission instruction once without assistant reply',async()=>{
