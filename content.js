@@ -114,7 +114,10 @@
       const login=document.querySelector('[data-testid="login-button"], a[href^="/auth/login"]');
       if(login&&login.getClientRects().length){await pause(id,'Login required. Sign in to ChatGPT before resuming.');return;}
       if(blocked(alerts)||/confirm|approv|captcha|verify|sign in|log in/i.test(alerts)){await pause(id,'ChatGPT requires your attention. Review the visible alert or confirmation.');return;}
-      if(!s.busy&&s.lastRole==='assistant'&&blocked(s.assistantText)){await pause(id,'ChatGPT reported a connection error or usage limit. Review the reply.');return;}
+      const pendingMissionSetup=mission?.mode==='mission'&&mission.instructionState==='pending';
+      // Replies from an older run may contain approval/completion/error wording.
+      // They must not stop the *new mission's* unsent setup instruction.
+      if(!pendingMissionSetup&&!s.busy&&s.lastRole==='assistant'&&blocked(s.assistantText)){await pause(id,'ChatGPT reported a connection error or usage limit. Review the reply.');return;}
       if(s.busy){
         sawBusy=true;lastGenerationObserved=true;
         if(s.assistantSig!==lastProgressSig){lastProgressSig=s.assistantSig;lastProgressAt=now();}
@@ -144,8 +147,8 @@
       if(!emptyInstruction&&!s.finalEvidence){await progress(id,'OBSERVING');return;}
       if(s.editorText){await pause(id,'Composer contains a draft. Nothing sent.');return;}
       if(!s.editor){await pause(id,'ChatGPT composer or Send control changed. Nothing sent.');return;}
-      if(blocked(s.assistantText)){await pause(id,'ChatGPT reported an error or usage limit.');return;}
-      if(finishOrApproval(s.assistantText)&&!reviewed){const done=/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)/i.test(s.assistantText.slice(-1100));if(!done||mission?.mode!=='mission'){await pause(id,done?'Roadmap completion detected.':'Human approval required.',done?'COMPLETED':'NEEDS_USER');return;}}
+      if(!instruction&&blocked(s.assistantText)){await pause(id,'ChatGPT reported an error or usage limit.');return;}
+      if(!instruction&&finishOrApproval(s.assistantText)&&!reviewed){const done=/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)/i.test(s.assistantText.slice(-1100));if(!done||mission?.mode!=='mission'){await pause(id,done?'Roadmap completion detected.':'Human approval required.',done?'COMPLETED':'NEEDS_USER');return;}}
       if((sess.limitMode||cfg.limitMode)!=='unlimited'&&sess.turns>=(sess.maxTurns||cfg.maxTurns)){await pause(id,'Maximum auto-continue count reached.');return;}
       if(s.busy)return;
       await progress(id,'READY');
