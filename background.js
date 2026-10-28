@@ -317,16 +317,44 @@ async function dispatch(m,sender){
     if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
     return serial(m.id,async()=>{
       const s=await read(m.id);
-      if(!s?.enabled||s.ownerTabId!==t.id||!s.reviewRequired)throw Error('Start the paused session after reviewing the blocker.');
-      if(!['OBSERVING','AWAITING_REPLY'].includes(s.state)||!s.baseline?.assistantKey||!s.lastClaim||s.lastClaim.kind!=='continuation')
-        throw Error('A stable completed assistant reply and prior send record are required.');
-      if(s.kickoffRequested||s.reviewOverrideKey)throw Error('Review continuation already requested.');
+      if(!s?.reviewRequired||s.reviewOverrideKey)throw Error('No pending human-review continuation to authorize.');
+      if(!s.lastClaim||!['continuation','instruction'].includes(s.lastClaim.kind))
+        throw Error('No verified prior submission to continue. Review the transcript manually.');
       const remote=await MissionSignal.get(m.id);
       if(remote.mode==='mission'&&(remote.state!=='ACTIVE'||remote.instruction?.state!=='sent'))
         throw Error('Mission must remain active with its setup instruction delivered.');
+      if(!s.enabled){
+        if(s.state!=='NEEDS_USER')throw Error('The approval pause changed. Review the current state.');
+        let live;
+        try{live=await chrome.tabs.sendMessage(t.id,{type:'REPLY_IDENTITY'});}catch{
+          throw Error('Conversation controller unavailable. Refresh the chat tab before continuing.');
+        }
+        if(!live?.ok||live.id!==m.id||live.busy||live.hasDraft||live.renderFailed||
+           live.lastRole!=='assistant'||!live.assistantKey||!live.finalEvidence)
+          throw Error('Review the finished assistant reply and clear any draft before continuing.');
+        if(s.reviewReplyKey&&s.reviewReplyKey!==live.assistantKey)
+          throw Error('The assistant reply changed since the approval pause. Review the new reply first.');
+        if(s.limitMode==='limited'&&(s.turns||0)>=(s.maxTurns||1))
+          throw Error('Continuation limit reached. Adjust the limit before authorizing.');
+        // Atomic pause->ARMING transition. The baseline step verifies the exact reply
+        // again before a single journaled claim. No direct send occurs here.
+        await write(m.id,{...s,enabled:true,ownerTabId:t.id,state:'ARMING',
+          generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          documentId:null,baseline:null,baselineStreaming:false,
+          reviewOverrideKey:live.assistantKey,waitingSince:0,recoveryCount:0,
+          lastError:'',lastActivity:Date.now()});
+        await diagnostic(m.id,'review_continuation_requested','paused_explicit_confirmation','ARMING');
+        return {ok:true,started:true};
+      }
+      if(s.ownerTabId!==t.id||!['OBSERVING','AWAITING_REPLY'].includes(s.state)||
+         !s.baseline?.assistantKey)
+        throw Error('The controller is not ready for a reviewed continuation.');
+      if(s.reviewReplyKey&&s.reviewReplyKey!==s.baseline.assistantKey)
+        throw Error('The assistant reply changed since the approval pause.');
+      if(s.kickoffRequested)throw Error('Another continuation is already requested.');
       await write(m.id,{...s,reviewOverrideKey:s.baseline.assistantKey});
-      await diagnostic(m.id,'review_continuation_requested','explicit_confirmation',s.state);
-      return {ok:true};
+      await diagnostic(m.id,'review_continuation_requested','active_explicit_confirmation',s.state);
+      return {ok:true,started:false};
     });
   }
   if(m.type==='REQUEST_KICKOFF') {
