@@ -57,7 +57,7 @@ async function pause(id,reason,state='PAUSED'){
   const s=await read(id);if(!s)return;
   const nextState=['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED';
   const explanation=String(reason).slice(0,360);
-  await write(id,{...s,enabled:false,state:nextState,lastError:explanation,reviewRequired:nextState==='NEEDS_USER'?true:nextState==='COMPLETED'||nextState==='CANCELLED'?false:Boolean(s.reviewRequired),reviewOverrideKey:null});
+  await write(id,{...s,enabled:false,state:nextState,lastError:explanation,reviewRequired:nextState==='NEEDS_USER'?/human approval required|ChatGPT requires your attention/i.test(explanation):nextState==='COMPLETED'||nextState==='CANCELLED'?false:Boolean(s.reviewRequired),reviewOverrideKey:null});
   if((nextState==='COMPLETED'||nextState==='CANCELLED'||nextState==='ERROR'||nextState==='NEEDS_USER'||/uncertain|disconnected|failed|unavailable|error|exhausted/i.test(explanation))
     &&(s.enabled||s.state!==nextState||s.lastError!==explanation)){
     const m=await MissionSignal.get(id);
