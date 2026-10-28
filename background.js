@@ -146,6 +146,9 @@ async function dispatch(m,sender){
       const sess=await read(m.id),mstate=await MissionSignal.synchronize(m.id,true);
       if(mstate.mode!=='mission'||mstate.state!=='ACTIVE'||mstate.instruction?.state!=='sent')throw Error('Mission instruction not verified. Review transcript or start a new mission.');
       if(sess?.enabled)throw Error('Pause before resuming.');
+      if(sess?.reviewRequired)throw Error('Human review is pending. Choose Continue after review or Dismiss approval warning; Resume will not clear it.');
+      if(sess?.state==='NEEDS_USER')throw Error('Needs attention: review the uncertain submission or blocker before resuming.');
+
       if(sess?.limitMode==='limited'&&(sess.turns||0)>=(sess.maxTurns||1))throw Error('Continuation cap reached.');
       const defaults=await config();
       await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:sess?.missionCapEnabled?'limited':'unlimited',missionCapEnabled:sess?.missionCapEnabled||false,localLimitMode:sess?.localLimitMode||defaults.limitMode,localMaxTurns:sess?.localMaxTurns||defaults.maxTurns,missionMaxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,maxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
@@ -239,8 +242,10 @@ async function dispatch(m,sender){
       }
       const override=typeof m.override==='string'?m.override.trim().slice(0,2000):existing?.override||'';
       if(!enabled && existing?.enabled && existing.ownerTabId!==tabId) throw Error('Only the owner tab can pause this conversation.');
-      if(!enabled){await write(id,{...(existing||fresh(tabId,override)),enabled:false,ownerTabId:null,override,state:'PAUSED',lastError:''});return {ok:true};}
+      if(!enabled){const needsReview=existing?.state==='NEEDS_USER';await write(id,{...(existing||fresh(tabId,override)),enabled:false,ownerTabId:null,override,state:needsReview?'NEEDS_USER':'PAUSED',lastError:needsReview?existing.lastError:''});return {ok:true};}
       if(existing?.enabled){await write(id,{...existing,override});return {ok:true};}
+      if(existing?.reviewRequired)throw Error('Human review is pending. Use Continue after review or Dismiss approval warning instead of Start.');
+      if(existing?.state==='NEEDS_USER')throw Error('Needs attention: review the uncertain send or external blocker before restarting. Do not retry an unknown submission.');
       const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='CANCELLED')throw Error('Mission cancelled. Prepare a new mission.');
       if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
@@ -264,7 +269,7 @@ async function dispatch(m,sender){
     return serial(m.id,async()=>{
       const current=await read(m.id);
       if(!current||current.enabled)throw Error('Pause automation before dismissing a warning.');
-      if(!current.reviewRequired||current.state!=='NEEDS_USER')
+      if(!current.reviewRequired||!['NEEDS_USER','PAUSED'].includes(current.state))
         throw Error('There is no human-approval warning to dismiss.');
       let replyKey=current.reviewReplyKey||null;
       try{
@@ -324,7 +329,7 @@ async function dispatch(m,sender){
       if(remote.mode==='mission'&&(remote.state!=='ACTIVE'||remote.instruction?.state!=='sent'))
         throw Error('Mission must remain active with its setup instruction delivered.');
       if(!s.enabled){
-        if(s.state!=='NEEDS_USER')throw Error('The approval pause changed. Review the current state.');
+        if(!['NEEDS_USER','PAUSED'].includes(s.state))throw Error('The approval pause changed. Review the current state.');
         let live;
         try{live=await chrome.tabs.sendMessage(t.id,{type:'REPLY_IDENTITY'});}catch{
           throw Error('Conversation controller unavailable. Refresh the chat tab before continuing.');
