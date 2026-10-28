@@ -359,12 +359,14 @@ test('new Mission clears old human review and sends setup despite historical app
 test('dismiss review warning is manual, scoped, preserves journal and sends nothing',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();
  h.storage['chat:'+CHAT].lastClaim={assistantKey:'prior-answer',kind:'continuation',token:'confirmed'};
- await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER',reviewReplyKey:'assistant-1'},h.owner);
  assert.equal((await s(h)).session.reviewRequired,true);
  const dismissed=await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10});assert.equal(dismissed.ok,true);
  const st=(await s(h)).session;assert.equal(st.state,'PAUSED');assert.equal(st.reviewRequired,false);
- assert.equal(st.lastError,'');assert.equal(st.lastClaim.token,'confirmed');assert.equal(c.page.sent.length,0);
+ assert.equal(st.lastError,'');assert.equal(st.lastClaim.token,'confirmed');assert.equal(st.lastHandled,'assistant-1');assert.equal(c.page.sent.length,0);
  assert.equal((await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10})).ok,false);
+ await activate(h);await c.tick();h.updateClock(7500);await c.tick();
+ assert.notEqual((await s(h)).session.state,'NEEDS_USER');assert.equal(c.page.sent.length,0);
 });
 
 test('changing completion mode clears outdated human warning without touching Mission history',async()=>{
