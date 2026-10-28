@@ -40,7 +40,7 @@ async function write(id,session){
   if(old?.state!==session.state||old?.enabled!==session.enabled)
     await diagnostic(id,'state_change',(old?.state||'NONE')+'_'+(session.enabled?'on':'off'),session.state||'UNKNOWN');
 }
-const fresh=(tabId,override)=>({enabled:true,ownerTabId:tabId,override,turns:0,state:'ARMING',generation:Date.now(),baseline:null,baselineStreaming:false,lastHandled:null,lastClaim:null,kickoffRequested:false,waitingSince:0,lastError:'',lastActivity:Date.now(),recoveryCount:0});
+const fresh=(tabId,override)=>({enabled:true,ownerTabId:tabId,override,turns:0,state:'ARMING',generation:Date.now(),baseline:null,baselineStreaming:false,lastHandled:null,lastClaim:null,kickoffRequested:false,sentInCurrentActivation:false,waitingSince:0,lastError:'',lastActivity:Date.now(),recoveryCount:0});
 async function owner(id,sender){
   const s=await read(id);
   if(!s?.enabled || !Number.isInteger(sender.tab?.id) || s.ownerTabId!==sender.tab.id || !tabMatches(sender.tab.url,id)) return null;
@@ -426,7 +426,7 @@ async function dispatch(m,sender){
     if(m.type==='CONFIRM_SENT'){
       if(s.state!=='SENDING'||!s.lastClaim||s.lastClaim.token!==m.token)return {ok:false,reason:'stale claim'};
       if(s.lastClaim.kind==='instruction'&&!await MissionSignal.acknowledgeInstruction(m.id,m.token))return {ok:false,reason:'Mission instruction acknowledgment is uncertain'};
-      await write(m.id,{...s,state:'AWAITING_REPLY',waitingSince:Date.now(),lastActivity:Date.now()});
+      await write(m.id,{...s,state:'AWAITING_REPLY',sentInCurrentActivation:true,waitingSince:Date.now(),lastActivity:Date.now()});
       const mission=await MissionSignal.get(m.id);if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)await pause(m.id,'Mission Signal disconnected. Five offline attempts exhausted.');return {ok:true};
     }
     if(m.type==='PAUSE'){await pause(m.id,m.reason||'Paused',m.state,m.reviewReplyKey);return {ok:true};}
