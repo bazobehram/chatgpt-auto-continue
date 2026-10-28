@@ -326,3 +326,13 @@ test('NEEDS_USER resume does not resend until explicit review, then sends exactl
  assert.equal((await s(h)).session.reviewRequired,false);
  await c.tick();h.updateClock(7000);await c.tick();assert.equal(c.page.sent.length,1);
 });
+
+
+test('uncertain send NEEDS_USER never unlocks review continuation',async()=>{
+ const h=harness(),c=h.fakePage();await activate(h);await c.tick();
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Sending timed out. Submission is uncertain: review the transcript before resuming. No automatic retry.',state:'NEEDS_USER'},h.owner);
+ const result=await s(h);assert.equal(result.session.reviewRequired,false);
+ await activate(h);await c.tick();
+ const attempt=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(attempt.ok,false);assert.equal(c.page.sent.length,0);
+});
