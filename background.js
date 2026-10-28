@@ -163,10 +163,21 @@ async function dispatch(m,sender){
         // to cancel a registered mission on the remote service.
         await MissionSignal.put(m.id,{mode:'mission'});
         const previous=await read(m.id);
-        if(previous)await write(m.id,{...previous,enabled:false,ownerTabId:null,state:'PAUSED',missionId:null,lastClaim:null,lastHandled:null,baseline:null,lastError:'New mission selected. Review and clear any old draft before Start.'});
+        if(previous)await write(m.id,{...previous,enabled:false,ownerTabId:null,state:'PAUSED',missionId:null,lastClaim:null,lastHandled:null,baseline:null,reviewRequired:false,reviewOverrideKey:null,kickoffRequested:false,lastError:'',waitingSince:0,documentId:null});
         return {ok:true,replaced:current.id||null};
       }
-      else await MissionSignal.setMode(m.id,m.mode);return {ok:true};});
+      else {
+        const before=await MissionSignal.get(m.id);
+        await MissionSignal.setMode(m.id,m.mode);
+        if(before.mode!==m.mode){
+          const previous=await read(m.id);
+          // Mode changes clear ONLY obsolete human-review UI state. They never
+          // clear an uncertain send journal or fabricate a completed mission.
+          if(previous?.reviewRequired&&previous.state==='NEEDS_USER')
+            await write(m.id,{...previous,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,lastError:''});
+        }
+      }
+      return {ok:true};});
   }
   if(m.type==='RECONCILE_INSTRUCTION'){
     if(!validId(m.id)||!sender.tab||!tabMatches(sender.tab.url,m.id))return {ok:false};
@@ -245,6 +256,20 @@ async function dispatch(m,sender){
     if(!validId(m.id))throw Error('Open a saved conversation first.');
     const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
     return serial(m.id,async()=>{const s=await read(m.id);if(s?.enabled&&s.ownerTabId!==t.id)throw Error('Message belongs to the owner tab.');await write(m.id,{...(s||{enabled:false,state:'IDLE',turns:0}),override:String(m.override||'').trim().slice(0,2000)});return {ok:true};});
+  }
+  if(m.type==='DISMISS_REVIEW'){
+    if(!validId(m.id))throw Error('Open a saved conversation.');
+    const tab=await chrome.tabs.get(Number(m.tabId));
+    if(!tabMatches(tab.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const current=await read(m.id);
+      if(!current||current.enabled)throw Error('Pause automation before dismissing a warning.');
+      if(!current.reviewRequired||current.state!=='NEEDS_USER')
+        throw Error('There is no human-approval warning to dismiss.');
+      await write(m.id,{...current,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,lastError:''});
+      await diagnostic(m.id,'review_dismissed','user_chose_ignore','PAUSED');
+      return {ok:true};
+    });
   }
   if(m.type==='REQUEST_REVIEW_CONTINUE'){
     if(!validId(m.id))throw Error('Open a saved conversation.');
