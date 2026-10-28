@@ -336,3 +336,49 @@ test('uncertain send NEEDS_USER never unlocks review continuation',async()=>{
  const attempt=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
  assert.equal(attempt.ok,false);assert.equal(c.page.sent.length,0);
 });
+
+
+test('new Mission clears old human review and sends setup despite historical approval reply',async()=>{
+ const {h,remote}=await missionHarness(),c=h.fakePage();
+ c.page.finish('Human approval required. A previous roadmap is unfinished.');
+ await activate(h);await c.tick();
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ assert.equal((await s(h)).session.reviewRequired,true);
+ assert.equal((await h.rpc({type:'CANCEL_MISSION',id:CHAT,tabId:10})).ok,true);
+ assert.equal((await h.rpc({type:'NEW_MISSION',id:CHAT,tabId:10})).ok,true);
+ const cleared=await s(h);assert.equal(cleared.session.reviewRequired,false);
+ assert.equal(cleared.session.lastError,'');assert.equal(cleared.session.lastClaim,null);
+ remote.state='ACTIVE'; // new remote registration, independent of the cancelled previous mission
+ await activate(h);await c.tick();h.updateClock(7000);await c.tick();
+ const result=await s(h);assert.equal(result.mission.instructionState,'sent');
+ assert.equal(result.session.enabled,true);assert.equal(result.session.state,'AWAITING_REPLY');
+ assert.equal(c.page.sent.length,1);assert.match(c.page.sent[0],/Mission Signal instruction/);
+ await c.tick();h.updateClock(7000);await c.tick();assert.equal(c.page.sent.length,1);
+});
+
+test('dismiss review warning is manual, scoped, preserves journal and sends nothing',async()=>{
+ const h=harness(),c=h.fakePage();await activate(h);await c.tick();
+ h.storage['chat:'+CHAT].lastClaim={assistantKey:'prior-answer',kind:'continuation',token:'confirmed'};
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ assert.equal((await s(h)).session.reviewRequired,true);
+ const dismissed=await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10});assert.equal(dismissed.ok,true);
+ const st=(await s(h)).session;assert.equal(st.state,'PAUSED');assert.equal(st.reviewRequired,false);
+ assert.equal(st.lastError,'');assert.equal(st.lastClaim.token,'confirmed');assert.equal(c.page.sent.length,0);
+ assert.equal((await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10})).ok,false);
+});
+
+test('changing completion mode clears outdated human warning without touching Mission history',async()=>{
+ const h=harness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ const changed=await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'mission'});
+ assert.equal(changed.ok,true);
+ const st=await s(h);assert.equal(st.session.state,'PAUSED');assert.equal(st.session.reviewRequired,false);
+ assert.equal(st.session.lastError,'');
+});
+
+test('uncertain delivery warnings are not dismissible through approval override',async()=>{
+ const h=harness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Sending timed out. Submission is uncertain.',state:'NEEDS_USER'},h.owner);
+ assert.equal((await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10})).ok,false);
+ assert.equal((await s(h)).session.state,'NEEDS_USER');
+});
