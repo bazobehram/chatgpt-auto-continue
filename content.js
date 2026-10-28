@@ -63,7 +63,7 @@
   }
   const blocked=t=>/(you.ve reached (?:your |the )?(?:limit|usage)|rate limit|too many requests|try again later|upgrade your plan|something went wrong|network error|response couldn.t load|captcha|verify you are human|you are out of messages)/i.test(t.slice(-1100));
   const finishOrApproval=t=>/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)|please (?:confirm|approve|authorize)|need your (?:approval|confirmation)|requires your (?:approval|confirmation)|waiting for your (?:approval|input)|approval required/i.test(t.slice(-1100));
-  async function pause(id,reason,state='PAUSED'){await send({type:'PAUSE',id,reason,state});}
+  async function pause(id,reason,state='PAUSED',reviewReplyKey=null){await send({type:'PAUSE',id,reason,state,reviewReplyKey});}
   async function progress(id,state){if(state===lastState)return;const r=await send({type:'PROGRESS',id,state});if(r.ok)lastState=state;}
   async function waitForReply(id,sess,cfg,s){
     if(sess.waitingSince&&now()-sess.waitingSince>cfg.stallSeconds*1000){
@@ -148,7 +148,7 @@
       if(s.editorText){await pause(id,'Composer contains a draft. Nothing sent.');return;}
       if(!s.editor){await pause(id,'ChatGPT composer or Send control changed. Nothing sent.');return;}
       if(!instruction&&blocked(s.assistantText)){await pause(id,'ChatGPT reported an error or usage limit.');return;}
-      if(!instruction&&finishOrApproval(s.assistantText)&&!reviewed){const done=/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)/i.test(s.assistantText.slice(-1100));if(!done||mission?.mode!=='mission'){await pause(id,done?'Roadmap completion detected.':'Human approval required.',done?'COMPLETED':'NEEDS_USER');return;}}
+      if(!instruction&&finishOrApproval(s.assistantText)&&!reviewed){const done=/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)/i.test(s.assistantText.slice(-1100));if(!done||mission?.mode!=='mission'){await pause(id,done?'Roadmap completion detected.':'Human approval required.',done?'COMPLETED':'NEEDS_USER',s.assistantKey);return;}}
       if((sess.limitMode||cfg.limitMode)!=='unlimited'&&sess.turns>=(sess.maxTurns||cfg.maxTurns)){await pause(id,'Maximum auto-continue count reached.');return;}
       if(s.busy)return;
       await progress(id,'READY');
@@ -214,7 +214,7 @@
       }
     }catch(e){if(invalidContext(e)){shutdown();return;}if(!stopped)console.warn('[Auto-Continue]',e);}finally{running=false;}
   }
-  chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
+  chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='REPLY_IDENTITY'){const s=snapshot();r({ok:true,id:getId(),assistantKey:s.assistantKey||null,busy:s.busy,lastRole:s.lastRole});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
   observer=new MutationObserver(()=>{if(!running&&!scheduled)scheduled=setTimeout(()=>{scheduled=null;void cycle();},150);});
   observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['aria-label','data-testid','aria-busy','disabled','data-is-streaming','data-talvt-turn-state']});
   timer=setInterval(()=>void cycle(),15000);
