@@ -1,3 +1,10 @@
+## v0.7.2 — Explicit recovery after human review
+
+- Preserve a previously confirmed send journal when a `NEEDS_USER` session is restarted; Start alone never replays the last reply.
+- Show **Continue after review** only for a session that previously required human intervention; require a direct confirmation that the external action has been completed.
+- The reviewed continuation is authorized for one matching assistant reply only, is journaled before sending, and clears its permission on claim. No automatic bypass of actual human approval.
+- Added regression coverage for Local Only review recovery without duplicate sends; Mission Signal stays under its existing remote-completion gate.
+
 ## v0.7.0 — Local diagnostic journal and stuck-send recovery
 
 - Store a bounded, per-conversation trace of the last 120 state changes and send milestones in Chrome local storage; never upload logs automatically.

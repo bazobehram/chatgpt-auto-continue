@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.7.1';
+const VERSION = '0.7.2';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -57,7 +57,7 @@ async function pause(id,reason,state='PAUSED'){
   const s=await read(id);if(!s)return;
   const nextState=['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED';
   const explanation=String(reason).slice(0,360);
-  await write(id,{...s,enabled:false,state:nextState,lastError:explanation});
+  await write(id,{...s,enabled:false,state:nextState,lastError:explanation,reviewRequired:nextState==='NEEDS_USER'?/human approval required|ChatGPT requires your attention/i.test(explanation):nextState==='COMPLETED'||nextState==='CANCELLED'?false:Boolean(s.reviewRequired),reviewOverrideKey:null});
   if((nextState==='COMPLETED'||nextState==='CANCELLED'||nextState==='ERROR'||nextState==='NEEDS_USER'||/uncertain|disconnected|failed|unavailable|error|exhausted/i.test(explanation))
     &&(s.enabled||s.state!==nextState||s.lastError!==explanation)){
     const m=await MissionSignal.get(id);
@@ -236,7 +236,7 @@ async function dispatch(m,sender){
       const defaults=await config(),resumeMission=mission.mode==='mission'&&mission.id&&existing?.missionId===mission.id;
       const localMax=existing?.localMaxTurns||existing?.maxTurns||defaults.maxTurns;
       const missionMax=existing?.missionMaxTurns||existing?.maxTurns||20;
-      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?(existing?.missionCapEnabled?'limited':'unlimited'):existing?.localLimitMode||existing?.limitMode||defaults.limitMode,missionCapEnabled:existing?.missionCapEnabled||false,localLimitMode:existing?.localLimitMode||existing?.limitMode||defaults.limitMode,localMaxTurns:localMax,missionMaxTurns:missionMax,maxTurns:mission.mode==='mission'?missionMax:localMax,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null}:{})};
+      const s={...fresh(tabId,override),missionId:mission.mode==='mission'?mission.id:null,limitMode:mission.mode==='mission'?(existing?.missionCapEnabled?'limited':'unlimited'):existing?.localLimitMode||existing?.limitMode||defaults.limitMode,missionCapEnabled:existing?.missionCapEnabled||false,localLimitMode:existing?.localLimitMode||existing?.limitMode||defaults.limitMode,localMaxTurns:localMax,missionMaxTurns:missionMax,maxTurns:mission.mode==='mission'?missionMax:localMax,generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,...(resumeMission?{turns:existing.turns||0,lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null,reviewRequired:Boolean(existing.reviewRequired)}:{reviewRequired:Boolean(existing?.reviewRequired),...(existing?.reviewRequired?{lastClaim:existing.lastClaim||null,lastHandled:existing.lastHandled||null,turns:existing.turns||0}:{})})};
       if(resumeMission&&s.limitMode!=='unlimited'&&s.turns>=s.maxTurns)throw Error('Mission continuation limit reached. Raise the limit or explicitly prepare a new mission.');
       await write(id,s);return {ok:true};
     });
@@ -245,6 +245,24 @@ async function dispatch(m,sender){
     if(!validId(m.id))throw Error('Open a saved conversation first.');
     const t=await chrome.tabs.get(Number(m.tabId));if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
     return serial(m.id,async()=>{const s=await read(m.id);if(s?.enabled&&s.ownerTabId!==t.id)throw Error('Message belongs to the owner tab.');await write(m.id,{...(s||{enabled:false,state:'IDLE',turns:0}),override:String(m.override||'').trim().slice(0,2000)});return {ok:true};});
+  }
+  if(m.type==='REQUEST_REVIEW_CONTINUE'){
+    if(!validId(m.id))throw Error('Open a saved conversation.');
+    const t=await chrome.tabs.get(Number(m.tabId));
+    if(!tabMatches(t.url,m.id))throw Error('Conversation changed.');
+    return serial(m.id,async()=>{
+      const s=await read(m.id);
+      if(!s?.enabled||s.ownerTabId!==t.id||!s.reviewRequired)throw Error('Start the paused session after reviewing the blocker.');
+      if(!['OBSERVING','AWAITING_REPLY'].includes(s.state)||!s.baseline?.assistantKey||!s.lastClaim||s.lastClaim.kind!=='continuation')
+        throw Error('A stable completed assistant reply and prior send record are required.');
+      if(s.kickoffRequested||s.reviewOverrideKey)throw Error('Review continuation already requested.');
+      const remote=await MissionSignal.get(m.id);
+      if(remote.mode==='mission'&&(remote.state!=='ACTIVE'||remote.instruction?.state!=='sent'))
+        throw Error('Mission must remain active with its setup instruction delivered.');
+      await write(m.id,{...s,reviewOverrideKey:s.baseline.assistantKey});
+      await diagnostic(m.id,'review_continuation_requested','explicit_confirmation',s.state);
+      return {ok:true};
+    });
   }
   if(m.type==='REQUEST_KICKOFF') {
     if(!validId(m.id))return {ok:false,error:'Invalid conversation ID.'};
@@ -290,13 +308,14 @@ async function dispatch(m,sender){
       const emptyBootstrap=instruction&&snapshot.emptyChat===true&&s.baseline?.userCount===0&&!s.baseline?.assistantKey&&!s.lastClaim;
       if((!snapshot.assistantKey||!snapshot.assistantSig)&&!emptyBootstrap)return {ok:false,reason:'missing assistant'};
       const kick=Boolean(m.kickoff&&s.kickoffRequested&&!s.lastClaim&&s.baseline?.assistantKey===snapshot.assistantKey);
-      if(!instruction&&((s.lastHandled===snapshot.assistantKey&&!kick)||s.lastClaim?.assistantKey===snapshot.assistantKey))return {ok:false,reason:'already handled'};
+      const review=Boolean(s.reviewRequired&&s.reviewOverrideKey&&s.reviewOverrideKey===snapshot.assistantKey&&s.baseline?.assistantKey===snapshot.assistantKey);
+      if(!instruction&&!review&&((s.lastHandled===snapshot.assistantKey&&!kick)||s.lastClaim?.assistantKey===snapshot.assistantKey))return {ok:false,reason:'already handled'};
       if(!instruction&&(s.limitMode||(await config()).limitMode)!=='unlimited'&&(s.turns||0)>=(s.maxTurns||(await config()).maxTurns)){await pause(m.id,'Maximum auto-continue count reached.');return {ok:false,reason:'limit reached'};}
       let initial;if(instruction){initial=await MissionSignal.claimInstruction(m.id);if(!initial)return {ok:false,reason:'Instruction not ready or already attempted'};}
       else{const gate=await MissionSignal.beforeContinuation(m.id);if(!gate.ok){await pause(m.id,gate.completed?'Remote mission completed.':gate.error,gate.completed?'COMPLETED':'PAUSED');return {ok:false,reason:'mission gate'};}}
       // Persist before interacting with the page. No automatic retries on uncertainty.
       const claim={assistantKey:snapshot.assistantKey,assistantSig:snapshot.assistantSig,kind:instruction?'instruction':'continuation',claimedAt:Date.now(),token:initial?.token||`${Date.now()}-${Math.random().toString(36).slice(2)}`};
-      await write(m.id,{...s,state:'SENDING',turns:(s.turns||0)+(instruction?0:1),lastClaim:claim,lastHandled:claim.assistantKey,kickoffRequested:false,lastError:'',waitingSince:Date.now(),lastActivity:Date.now()});
+      await write(m.id,{...s,state:'SENDING',turns:(s.turns||0)+(instruction?0:1),lastClaim:claim,lastHandled:claim.assistantKey,kickoffRequested:false,reviewRequired:false,reviewOverrideKey:null,lastError:'',waitingSince:Date.now(),lastActivity:Date.now()});
       return {ok:true,token:claim.token,message:initial?.message||String(s.override||(await config()).message||'go').trim()};
     }
     if(m.type==='ABORT_UNSENT'){

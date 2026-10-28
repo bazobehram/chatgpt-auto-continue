@@ -133,7 +133,8 @@
       const newFromBaseline=!!(sess.baseline && (s.assistantKey!==sess.baseline.assistantKey));
       const kickoff=Boolean(sess.kickoffRequested&&!sess.lastClaim&&sess.baseline?.assistantKey===s.assistantKey);
       const instruction=mission?.mode==='mission'&&mission.instructionState==='pending';
-      const candidate=instruction || kickoff || (!oldHandled && !!sess.lastClaim && s.assistantKey!==sess.lastClaim.assistantKey) || (newFromBaseline && observedNewUser) || (sess.baselineStreaming && lastGenerationObserved && !oldHandled);
+      const reviewed=Boolean(sess.reviewRequired&&sess.reviewOverrideKey&&sess.reviewOverrideKey===s.assistantKey&&sess.baseline?.assistantKey===s.assistantKey);
+      const candidate=instruction || kickoff || reviewed || (!oldHandled && !!sess.lastClaim && s.assistantKey!==sess.lastClaim.assistantKey) || (newFromBaseline && observedNewUser) || (sess.baselineStreaming && lastGenerationObserved && !oldHandled);
       if(!candidate){
         if(sess.lastClaim)await waitForReply(id,sess,cfg,s);
         return;
@@ -144,7 +145,7 @@
       if(s.editorText){await pause(id,'Composer contains a draft. Nothing sent.');return;}
       if(!s.editor){await pause(id,'ChatGPT composer or Send control changed. Nothing sent.');return;}
       if(blocked(s.assistantText)){await pause(id,'ChatGPT reported an error or usage limit.');return;}
-      if(finishOrApproval(s.assistantText)){const done=/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)/i.test(s.assistantText.slice(-1100));if(!done||mission?.mode!=='mission'){await pause(id,done?'Roadmap completion detected.':'Human approval required.',done?'COMPLETED':'NEEDS_USER');return;}}
+      if(finishOrApproval(s.assistantText)&&!reviewed){const done=/(?:roadmap|task|work) (?:is |are )?(?:fully )?(?:complete|finished)|all (?:tasks|steps) (?:are )?(?:complete|finished)/i.test(s.assistantText.slice(-1100));if(!done||mission?.mode!=='mission'){await pause(id,done?'Roadmap completion detected.':'Human approval required.',done?'COMPLETED':'NEEDS_USER');return;}}
       if((sess.limitMode||cfg.limitMode)!=='unlimited'&&sess.turns>=(sess.maxTurns||cfg.maxTurns)){await pause(id,'Maximum auto-continue count reached.');return;}
       if(s.busy)return;
       await progress(id,'READY');
