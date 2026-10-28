@@ -55,7 +55,10 @@ function paint(){
   if(document.activeElement!==$('missionCapNumber'))$('missionCapNumber').value=session?.missionMaxTurns||20;
   $('missionCap').disabled=Boolean(session?.enabled)||other||saving;
   $('missionCapNumber').disabled=Boolean(session?.enabled)||other||saving||!session?.missionCapEnabled;
-  $('resumeMission').disabled=Boolean(session?.enabled)||other||saving||remoteDone||mission?.state==='CANCELLED'||mission?.instructionState!=='sent';
+  const reviewPending=Boolean(session?.reviewRequired&&!session?.enabled&&['NEEDS_USER','PAUSED'].includes(state));
+  const needsAttention=Boolean(!session?.enabled&&state==='NEEDS_USER');
+  $('resumeMission').disabled=Boolean(session?.enabled)||other||saving||remoteDone||reviewPending||needsAttention||mission?.state==='CANCELLED'||mission?.instructionState!=='sent';
+  $('resumeMission').title=reviewPending?'Resolve the human approval first using Continue after review or Dismiss approval warning.':needsAttention?'Review the safety stop before resuming.':'Resume observing new ChatGPT replies. Does not resend the prior continuation.';
   $('cancelMission').disabled=other||saving||remoteDone||mission?.state==='CANCELLED';
   $('status').textContent=other&&health?'Other tab':status;
   $('status').className='badge '+(['Needs attention','Recovery'].includes(status)?'attention':session?.enabled&&health?'running':status==='Paused'?'paused':'');
@@ -72,14 +75,13 @@ function paint(){
   $('maxTurns').disabled=missionMode||!id||other||saving;
   $('limitProgress').textContent=missionMode?(session?.turns||0)+(session?.missionCapEnabled?' / '+(session?.maxTurns||settings.maxTurns)+' safety cap':' continuations · stops on Mission Signal')+' · offline max 5':progressOf(session);
   const descriptions={ARMING:'Reading the current conversation…',OBSERVING:'Watching for the next finished reply.',GENERATING:'ChatGPT is working. Waiting for completion.',SETTLING:'Checking that the reply has finished.',READY:'Reply finished. Checking send safeguards.',SENDING:'Verifying continuation submission…',AWAITING_REPLY:'Continuation sent. Waiting for a reply.',RECOVERING:'Recovery requires your review.'};
-  $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':mission?.state==='CANCELLED'?'Mission cancelled. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):'Automation is paused. Start when you are ready.';
+  $('activity').textContent=remoteDone?'Mission completed successfully. Choose New mission to start another.':mission?.state==='CANCELLED'?'Mission cancelled. Choose New mission to start another.':session?.enabled&&!health?'Controller unavailable or page not ready. Review the owner tab.':other?'Running in another tab. This tab cannot send.':on?(health?.busy?descriptions.GENERATING:descriptions[state]||state):reviewPending?'Human review is still pending. Continue after review or dismiss the warning; Resume will not send anything.':needsAttention?'Review the safety stop before restarting.':'Automation is paused. Start when you are ready.';
   $('lastError').hidden=remoteDone||!session?.lastError;$('lastError').textContent=remoteDone?'':session?.lastError||'';$('openOwner').hidden=!other;
-  $('dismissReviewRow').hidden=!session?.reviewRequired||Boolean(session?.enabled)||session?.state!=='NEEDS_USER'||other;
+  $('dismissReviewRow').hidden=!reviewPending||other;
   $('dismissReview').disabled=saving;
-  const pausedReview=Boolean(session?.reviewRequired&&!session?.enabled&&state==='NEEDS_USER');
-  $('reviewResumeRow').hidden=!session?.reviewRequired||other||remoteDone||(!on&&state!=='NEEDS_USER');
-  $('reviewContinue').disabled=saving||Boolean(session?.reviewOverrideKey)||(!pausedReview&&(!on||!health||!['OBSERVING','AWAITING_REPLY'].includes(state)));
-  $('toggleSession').disabled=!id||other||saving||remoteDone||pausedReview||(mission?.mode==='mission'&&mission.state==='CANCELLED');$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':pausedReview?'Review required':'Start';$('toggleSession').classList.toggle('danger',on);
+  $('reviewResumeRow').hidden=!session?.reviewRequired||other||remoteDone||(!on&&!reviewPending);
+  $('reviewContinue').disabled=saving||Boolean(session?.reviewOverrideKey)||(!reviewPending&&(!on||!health||!['OBSERVING','AWAITING_REPLY'].includes(state)));
+  $('toggleSession').disabled=!id||other||saving||remoteDone||reviewPending||needsAttention||(mission?.mode==='mission'&&mission.state==='CANCELLED');$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':reviewPending?'Review required':needsAttention?'Needs attention':'Start';$('toggleSession').classList.toggle('danger',on);
   $('kickoff').disabled=!on||!health||health.busy||state!=='OBSERVING'||Boolean(session?.lastClaim)||Boolean(session?.kickoffRequested)||(mission?.mode==='mission'&&mission.instructionState!=='sent')||saving;
   $('message').disabled=(other&&scope!=='global')||(scope!=='global'&&!id);sourceLabel();
 }
@@ -137,7 +139,7 @@ $('cancelMission').onclick=guard(async()=>{
   await ask({type:'CANCEL_MISSION',id,tabId:tab.id});await refresh();notify('Mission cancellation confirmed.');
 });
 $('resumeMission').onclick=guard(async()=>{
-  await ask({type:'RESUME_MISSION',id,tabId:tab.id});await wake(tab.id);await refresh();notify('Existing mission resumed.');
+  await ask({type:'RESUME_MISSION',id,tabId:tab.id});await wake(tab.id);await refresh();notify('Existing mission resumed. Watching for a NEW assistant reply; no message was sent.');
 });
 async function saveMissionCap(){
   await ask({type:'SET_MISSION_CAP',id,tabId:tab.id,enabled:$('missionCap').checked,maxTurns:Number($('missionCapNumber').value)});
