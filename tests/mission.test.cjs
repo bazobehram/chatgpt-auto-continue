@@ -55,6 +55,35 @@ const root=path.resolve(__dirname,'..');
    assert.equal((await sent(empty)).length,1);
    assert.equal((await rpc({type:'SET_SESSION',id:empty.id,tabId:empty.tabId,enabled:false})).ok,true);
   });
+  await check('Historical approval reply does not block new Mission setup instruction',async()=>{
+   const stale=await newChat();
+   await stale.page.evaluate(()=>{document.querySelector('[data-message-author-role="assistant"]').textContent='Human approval required. A previous mission was interrupted.';});
+   await instruction(stale);
+   assert.equal((await sent(stale)).length,1);
+   assert.equal((await status(stale)).mission.instructionState,'sent');
+   await rpc({type:'SET_SESSION',id:stale.id,tabId:stale.tabId,enabled:false});
+  });
+  await check('Dismiss review in popup clears warning and does not resend the old reply',async()=>{
+   const reviewed=await newChat();
+   await instruction(reviewed);
+   await reviewed.page.evaluate(()=>mock.assistant('Human approval required.',false));
+   await tick(reviewed);
+   await wait(async()=>(await status(reviewed)).session.state==='NEEDS_USER','approval pause');
+   const popup=await context.newPage();
+   popup.on('dialog',dialog=>dialog.accept());
+   await reviewed.page.bringToFront();await popup.goto(popupUrl);
+   await wait(async()=>await popup.locator('#dismissReview').isVisible(),'dismiss approval action');
+   const before=(await sent(reviewed)).length;
+   await popup.locator('#dismissReview').click();
+   await wait(async()=>((await status(reviewed)).session.state==='PAUSED'),'approval dismissed');
+   assert.equal((await status(reviewed)).session.reviewRequired,false);
+   assert.equal((await sent(reviewed)).length,before);
+   await popup.close();
+   await start(reviewed);await reviewed.page.waitForTimeout(4200);
+   assert.notEqual((await status(reviewed)).session.state,'NEEDS_USER');
+   assert.equal((await sent(reviewed)).length,before);
+   await rpc({type:'SET_SESSION',id:reviewed.id,tabId:reviewed.tabId,enabled:false});
+  });
   await check('Refresh and explicit resume never repeat a confirmed instruction',async()=>{
    await a.page.reload();await tick(a);await wait(async()=>(await status(a)).session.enabled===false,'refresh paused');await start(a);await a.page.waitForTimeout(3500);assert.deepEqual(await sent(a),[]);assert.equal((await status(a)).mission.instructionState,'sent');
   });
