@@ -11,6 +11,7 @@
 
 <div class="row small"><span id="missionStatus">Local Only · no server required</span><button id="newMission" class="link" hidden>New mission</button></div>
 <div id="missionIdentity" class="small mission-id" hidden></div><details id="missionHistoryPanel" hidden><summary>History <span id="missionHistoryCount" class="count">0</span></summary><div id="missionHistoryItems" class="small"></div></details><div id="missionActions" class="row mission-actions" hidden><button id="resumeMission" class="secondary" type="button">Resume</button><button id="cancelMission" class="secondary" type="button">Cancel mission</button></div>
+<div id="dismissReviewRow" hidden><p class="hint">If this approval warning is outdated or incorrect, dismiss it. This does not approve anything or send a message.</p><button id="dismissReview" type="button" class="secondary">Dismiss approval warning</button></div>
 <div id="reviewResumeRow" hidden><p class="hint">Only continue after you have completed the requested human action. The next message is sent once.</p><button id="reviewContinue" type="button" class="secondary">Continue after review</button></div><div class="actions"><button id="toggleSession" class="primary" disabled>Start</button><button id="kickoff" class="secondary" disabled title="Start first, then continue the current finished reply">Send once</button></div>
 <p id="modeHint" class="hint">Local Only uses your selected limit; Mission Signal stops on verified server completion.</p><div id="flash" role="status" aria-live="polite"></div>
 </section>
