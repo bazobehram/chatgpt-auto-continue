@@ -29,7 +29,7 @@ function harness(){
 function message(role,txt,id){return {role,innerText:txt,getAttribute(k){return {'data-message-author-role':role,'data-message-id':id,'data-complete':'true'}[k]||null},closest:()=>null};}
 async function activate(h){const r=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true,override:''});if(!r.ok)console.log('activation error:',r);assert.equal(r.ok,true);}
 const s=h=>h.rpc({type:'STATUS',id:CHAT});
-test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.7.3');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
+test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.7.4');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
 test('activation never sends against an old answer',async()=>{const h=harness(),c=h.fakePage();await activate(h);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);assert.equal((await s(h)).session.lastHandled,'assistant-1');});
 test('waits for a finished response, sends once, then a next response, respects cap',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();c.page.user('start');c.page.assistant('partial',true);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);
@@ -318,8 +318,9 @@ test('NEEDS_USER resume does not resend until explicit review, then sends exactl
  const paused=await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
  assert.equal(paused.ok,true);
  assert.equal((await s(h)).session.reviewRequired,true);
- await activate(h);await c.tick();h.updateClock(8000);await c.tick();
- assert.equal(c.page.sent.length,0);
+ const rejected=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true});
+ assert.equal(rejected.ok,false);assert.match(rejected.error,/review is pending/);
+ assert.equal((await s(h)).session.state,'NEEDS_USER');assert.equal(c.page.sent.length,0);
  const accepted=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
  assert.equal(accepted.ok,true);
  await c.tick();h.updateClock(7000);await c.tick();
@@ -333,7 +334,8 @@ test('uncertain send NEEDS_USER never unlocks review continuation',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();
  await h.rpc({type:'PAUSE',id:CHAT,reason:'Sending timed out. Submission is uncertain: review the transcript before resuming. No automatic retry.',state:'NEEDS_USER'},h.owner);
  const result=await s(h);assert.equal(result.session.reviewRequired,false);
- await activate(h);await c.tick();
+ const restart=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true});
+ assert.equal(restart.ok,false);assert.match(restart.error,/Needs attention/);
  const attempt=await h.rpc({type:'REQUEST_REVIEW_CONTINUE',id:CHAT,tabId:10});
  assert.equal(attempt.ok,false);assert.equal(c.page.sent.length,0);
 });
@@ -438,4 +440,57 @@ test('mission human approval immediately after setup instruction supports review
  await c.tick();h.updateClock(7500);await c.tick();
  assert.equal(c.page.sent.length,2);assert.equal(c.page.sent[1],'go');
  await c.tick();assert.equal(c.page.sent.length,2);
+});
+
+
+test('Resume Mission refuses unresolved approval without losing review identity or sending',async()=>{
+ const {h}=await missionHarness();const c=await deliverInstruction(h);
+ c.page.assistant('Human approval required.',false);
+ await c.tick();h.updateClock(7500);await c.tick();
+ const before=(await s(h)).session;
+ assert.equal(before.state,'NEEDS_USER');assert.equal(before.reviewRequired,true);
+ const blocked=await h.rpc({type:'RESUME_MISSION',id:CHAT,tabId:10});
+ assert.equal(blocked.ok,false);assert.match(blocked.error,/Human review is pending/);
+ const after=(await s(h)).session;
+ assert.equal(after.state,'NEEDS_USER');assert.equal(after.reviewRequired,true);
+ assert.equal(after.reviewReplyKey,before.reviewReplyKey);
+ assert.equal(after.lastClaim.token,before.lastClaim.token);
+ assert.equal(c.page.sent.length,1);
+});
+
+test('Pause pressed on NEEDS_USER preserves approval or uncertain-send attention state',async()=>{
+ const h=harness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER',reviewReplyKey:'assistant-1'},h.owner);
+ const p=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false});assert.equal(p.ok,true);
+ let current=(await s(h)).session;assert.equal(current.state,'NEEDS_USER');assert.equal(current.reviewRequired,true);
+ await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10});
+ current=(await s(h)).session;assert.equal(current.state,'PAUSED');assert.equal(current.reviewRequired,false);
+});
+
+test('Legacy PAUSED review flag cannot be discarded by Start or Resume and supports dismissal',async()=>{
+ const {h}=await missionHarness();await activate(h);
+ await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER',reviewReplyKey:'assistant-1'},h.owner);
+ h.storage['chat:'+CHAT].state='PAUSED';h.storage['chat:'+CHAT].enabled=false;
+ assert.equal((await h.rpc({type:'RESUME_MISSION',id:CHAT,tabId:10})).ok,false);
+ assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true})).ok,false);
+ const dismissed=await h.rpc({type:'DISMISS_REVIEW',id:CHAT,tabId:10});assert.equal(dismissed.ok,true);
+ assert.equal((await s(h)).session.reviewRequired,false);
+});
+
+
+test('resumed observation never claims a fresh submission and retains confirmed send journal',async()=>{
+ const {h}=await missionHarness();const c=await deliverInstruction(h);
+ const before=(await s(h)).session;assert.equal(before.sentInCurrentActivation,true);
+ assert.equal((await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:false})).ok,true);
+ assert.equal((await h.rpc({type:'RESUME_MISSION',id:CHAT,tabId:10})).ok,true);
+ const after=(await s(h)).session;
+ assert.equal(after.sentInCurrentActivation,false);assert.equal(after.state,'ARMING');
+ assert.equal(after.lastClaim.token,before.lastClaim.token);
+ await c.tick();h.updateClock(7500);await c.tick();assert.equal(c.page.sent.length,1);
+});
+
+test('obsolete review command is unavailable and cannot bypass explicit recovery checks',async()=>{
+ const h=harness();await activate(h);await h.rpc({type:'PAUSE',id:CHAT,reason:'Human approval required.',state:'NEEDS_USER'},h.owner);
+ const result=await h.rpc({type:'START_REVIEW_CONTINUE',id:CHAT,tabId:10});
+ assert.equal(result.ok,false);assert.equal((await s(h)).session.state,'NEEDS_USER');
 });

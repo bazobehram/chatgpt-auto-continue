@@ -41,8 +41,8 @@ const root=path.resolve(__dirname,'..');
   await check('Registration and one automatically acknowledged instruction; no secrets in chat',async()=>{
    await instruction(a);const text=(await sent(a))[0],s=await status(a);assert.match(text,/mission-signal complete/);assert.ok(!text.includes('fixture-secret-only'));assert.equal(s.session.turns,0);assert.equal(missions.size,1);
    const p=await context.newPage();await a.page.bringToFront();await p.goto(popupUrl);
-   assert.equal(await p.locator('#limitCard').isHidden(),true);
-   assert.match(await p.locator('#modeHint').textContent(),/verified completion/);
+   await wait(async()=>await p.locator('#limitCard').isHidden(),'Mission Signal limit panel rendered');
+   await wait(async()=>/verified completion/.test(await p.locator('#modeHint').textContent()),'Mission Signal hint rendered');
    await p.close();
   });
   await check('Empty chat bootstrap sends Mission instruction once without assistant reply',async()=>{
@@ -90,10 +90,14 @@ const root=path.resolve(__dirname,'..');
    await reviewed.page.evaluate(()=>mock.assistant('Human approval required.',false));
    await tick(reviewed);
    await wait(async()=>(await status(reviewed)).session.state==='NEEDS_USER','approval pause before review');
+   const denied=await rpc({type:'RESUME_MISSION',id:reviewed.id,tabId:reviewed.tabId});
+   assert.equal(denied.ok,false);assert.match(denied.error,/Human review is pending/);
+   assert.equal((await status(reviewed)).session.reviewRequired,true);
    const popup=await context.newPage();
    popup.on('dialog',d=>d.accept());
    await reviewed.page.bringToFront();await popup.goto(popupUrl);
    await wait(async()=>await popup.locator('#reviewContinue').isVisible(),'direct reviewed continuation visible');
+   await wait(async()=>await popup.locator('#resumeMission').isDisabled(),'Resume disabled while approval unresolved');
    await wait(async()=>await popup.locator('#toggleSession').isDisabled(),'Start disabled during approval');
    const before=(await sent(reviewed)).length;
    await popup.locator('#reviewContinue').click();
@@ -177,5 +181,5 @@ const root=path.resolve(__dirname,'..');
   await check('Cleanup leaves no armed disposable controllers; connection checks occurred before sends',async()=>{
    for(const c of chats){await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:false});await c.page.close();assert.equal((await status(c)).session.enabled,false);}assert.ok(requests>15);
   });
- }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.7.3',environment:'isolated Chromium fixtures',results},null,2));}
+ }finally{if(control&&!control.isClosed())await control.evaluate(async()=>{const all=await chrome.storage.local.get(null);for(const [k,v]of Object.entries(all))if(k.startsWith('chat:'))await chrome.storage.local.set({[k]:{...v,enabled:false,state:'PAUSED'}});}).catch(()=>{});await context.close();fs.rmSync(profile,{recursive:true,force:true});fs.writeFileSync(path.join(__dirname,'mission-results.json'),JSON.stringify({version:'0.7.4',environment:'isolated Chromium fixtures',results},null,2));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.7.3';
+const VERSION = '0.7.4';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -40,7 +40,7 @@ async function write(id,session){
   if(old?.state!==session.state||old?.enabled!==session.enabled)
     await diagnostic(id,'state_change',(old?.state||'NONE')+'_'+(session.enabled?'on':'off'),session.state||'UNKNOWN');
 }
-const fresh=(tabId,override)=>({enabled:true,ownerTabId:tabId,override,turns:0,state:'ARMING',generation:Date.now(),baseline:null,baselineStreaming:false,lastHandled:null,lastClaim:null,kickoffRequested:false,waitingSince:0,lastError:'',lastActivity:Date.now(),recoveryCount:0});
+const fresh=(tabId,override)=>({enabled:true,ownerTabId:tabId,override,turns:0,state:'ARMING',generation:Date.now(),baseline:null,baselineStreaming:false,lastHandled:null,lastClaim:null,kickoffRequested:false,sentInCurrentActivation:false,waitingSince:0,lastError:'',lastActivity:Date.now(),recoveryCount:0});
 async function owner(id,sender){
   const s=await read(id);
   if(!s?.enabled || !Number.isInteger(sender.tab?.id) || s.ownerTabId!==sender.tab.id || !tabMatches(sender.tab.url,id)) return null;
@@ -146,6 +146,9 @@ async function dispatch(m,sender){
       const sess=await read(m.id),mstate=await MissionSignal.synchronize(m.id,true);
       if(mstate.mode!=='mission'||mstate.state!=='ACTIVE'||mstate.instruction?.state!=='sent')throw Error('Mission instruction not verified. Review transcript or start a new mission.');
       if(sess?.enabled)throw Error('Pause before resuming.');
+      if(sess?.reviewRequired)throw Error('Human review is pending. Choose Continue after review or Dismiss approval warning; Resume will not clear it.');
+      if(sess?.state==='NEEDS_USER')throw Error('Needs attention: review the uncertain submission or blocker before resuming.');
+
       if(sess?.limitMode==='limited'&&(sess.turns||0)>=(sess.maxTurns||1))throw Error('Continuation cap reached.');
       const defaults=await config();
       await write(m.id,{...fresh(t.id,sess?.override||''),missionId:mstate.id,limitMode:sess?.missionCapEnabled?'limited':'unlimited',missionCapEnabled:sess?.missionCapEnabled||false,localLimitMode:sess?.localLimitMode||defaults.limitMode,localMaxTurns:sess?.localMaxTurns||defaults.maxTurns,missionMaxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,maxTurns:sess?.missionMaxTurns||sess?.maxTurns||20,turns:sess?.turns||0,lastClaim:sess?.lastClaim||null,lastHandled:sess?.lastHandled||null,generation:`${Date.now()}-${Math.random()}`});
@@ -239,8 +242,10 @@ async function dispatch(m,sender){
       }
       const override=typeof m.override==='string'?m.override.trim().slice(0,2000):existing?.override||'';
       if(!enabled && existing?.enabled && existing.ownerTabId!==tabId) throw Error('Only the owner tab can pause this conversation.');
-      if(!enabled){await write(id,{...(existing||fresh(tabId,override)),enabled:false,ownerTabId:null,override,state:'PAUSED',lastError:''});return {ok:true};}
+      if(!enabled){const needsReview=existing?.state==='NEEDS_USER';await write(id,{...(existing||fresh(tabId,override)),enabled:false,ownerTabId:null,override,state:needsReview?'NEEDS_USER':'PAUSED',lastError:needsReview?existing.lastError:''});return {ok:true};}
       if(existing?.enabled){await write(id,{...existing,override});return {ok:true};}
+      if(existing?.reviewRequired)throw Error('Human review is pending. Use Continue after review or Dismiss approval warning instead of Start.');
+      if(existing?.state==='NEEDS_USER')throw Error('Needs attention: review the uncertain send or external blocker before restarting. Do not retry an unknown submission.');
       const mission=await MissionSignal.ensure(id);if(mission.mode==='mission'&&mission.state==='CANCELLED')throw Error('Mission cancelled. Prepare a new mission.');
       if(mission.mode==='mission'&&mission.state==='COMPLETED'){await pause(id,'Remote mission completed.','COMPLETED');return {ok:false,error:'Mission is completed. Start again to create a new mission.'};}
       if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)throw Error('Five offline attempts exhausted. Reconnect before restarting.');
@@ -264,7 +269,7 @@ async function dispatch(m,sender){
     return serial(m.id,async()=>{
       const current=await read(m.id);
       if(!current||current.enabled)throw Error('Pause automation before dismissing a warning.');
-      if(!current.reviewRequired||current.state!=='NEEDS_USER')
+      if(!current.reviewRequired||!['NEEDS_USER','PAUSED'].includes(current.state))
         throw Error('There is no human-approval warning to dismiss.');
       let replyKey=current.reviewReplyKey||null;
       try{
@@ -276,38 +281,6 @@ async function dispatch(m,sender){
       // Mark this exact prior response as handled. Dismiss never submits a message.
       await write(m.id,{...current,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastHandled:replyKey,lastError:''});
       await diagnostic(m.id,'review_dismissed','user_chose_ignore','PAUSED');
-      return {ok:true};
-    });
-  }
-  if(m.type==='START_REVIEW_CONTINUE'){
-    if(!validId(m.id))throw Error('Open a saved conversation.');
-    const tab=await chrome.tabs.get(Number(m.tabId));
-    if(!tabMatches(tab.url,m.id))throw Error('Conversation changed.');
-    return serial(m.id,async()=>{
-      const current=await read(m.id);
-      if(!current||current.enabled||current.state!=='NEEDS_USER'||!current.reviewRequired)
-        throw Error('Only a paused human-review session can be continued this way.');
-      if(!current.lastClaim||!['instruction','continuation'].includes(current.lastClaim.kind))
-        throw Error('No confirmed previous send journal. Review the transcript and continue manually.');
-      let identity;
-      try{identity=await chrome.tabs.sendMessage(tab.id,{type:'REPLY_IDENTITY'});}
-      catch{throw Error('Conversation controller unavailable. Refresh this tab before trying again.');}
-      if(!identity?.ok||identity.id!==m.id||identity.busy||identity.lastRole!=='assistant'||!identity.assistantKey||identity.hasDraft)
-        throw Error('A stable assistant reply and an empty composer are required.');
-      if(current.reviewReplyKey&&identity.assistantKey!==current.reviewReplyKey)
-        throw Error('The reply changed since the review warning. Inspect the transcript and restart safely.');
-      const mission=await MissionSignal.synchronize(m.id,true);
-      if(mission.mode==='mission'&&(mission.state!=='ACTIVE'||mission.instruction?.state!=='sent'))
-        throw Error('Mission must be active and its setup instruction must already be delivered.');
-      const defaults=await config();
-      if((current.limitMode||defaults.limitMode)!=='unlimited'&&(current.turns||0)>=(current.maxTurns||defaults.maxTurns))
-        throw Error('Continuation safety cap reached. Adjust it while paused.');
-      await write(m.id,{...current,enabled:true,ownerTabId:tab.id,state:'ARMING',
-        documentId:null,baseline:null,baselineStreaming:false,kickoffRequested:false,
-        reviewRequired:true,reviewOverrideKey:identity.assistantKey,lastError:'',
-        generation:`${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        waitingSince:0,lastActivity:Date.now(),recoveryCount:0});
-      await diagnostic(m.id,'review_continuation_requested','explicit_paused_confirmation','ARMING');
       return {ok:true};
     });
   }
@@ -324,7 +297,7 @@ async function dispatch(m,sender){
       if(remote.mode==='mission'&&(remote.state!=='ACTIVE'||remote.instruction?.state!=='sent'))
         throw Error('Mission must remain active with its setup instruction delivered.');
       if(!s.enabled){
-        if(s.state!=='NEEDS_USER')throw Error('The approval pause changed. Review the current state.');
+        if(!['NEEDS_USER','PAUSED'].includes(s.state))throw Error('The approval pause changed. Review the current state.');
         let live;
         try{live=await chrome.tabs.sendMessage(t.id,{type:'REPLY_IDENTITY'});}catch{
           throw Error('Conversation controller unavailable. Refresh the chat tab before continuing.');
@@ -421,7 +394,7 @@ async function dispatch(m,sender){
     if(m.type==='CONFIRM_SENT'){
       if(s.state!=='SENDING'||!s.lastClaim||s.lastClaim.token!==m.token)return {ok:false,reason:'stale claim'};
       if(s.lastClaim.kind==='instruction'&&!await MissionSignal.acknowledgeInstruction(m.id,m.token))return {ok:false,reason:'Mission instruction acknowledgment is uncertain'};
-      await write(m.id,{...s,state:'AWAITING_REPLY',waitingSince:Date.now(),lastActivity:Date.now()});
+      await write(m.id,{...s,state:'AWAITING_REPLY',sentInCurrentActivation:true,waitingSince:Date.now(),lastActivity:Date.now()});
       const mission=await MissionSignal.get(m.id);if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)await pause(m.id,'Mission Signal disconnected. Five offline attempts exhausted.');return {ok:true};
     }
     if(m.type==='PAUSE'){await pause(m.id,m.reason||'Paused',m.state,m.reviewReplyKey);return {ok:true};}
