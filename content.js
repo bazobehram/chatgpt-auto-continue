@@ -214,7 +214,7 @@
       }
     }catch(e){if(invalidContext(e)){shutdown();return;}if(!stopped)console.warn('[Auto-Continue]',e);}finally{running=false;}
   }
-  chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='REPLY_IDENTITY'){const s=snapshot();r({ok:true,id:getId(),assistantKey:s.assistantKey||null,busy:s.busy,lastRole:s.lastRole});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
+  chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m.type==='PROBE'){const s=snapshot();r({ok:true,id:getId(),documentId,operational:!stopped&&Boolean(s.editor),busy:s.busy});return false;}if(m.type==='REPLY_IDENTITY'){const s=snapshot();r({ok:true,id:getId(),assistantKey:s.assistantKey||null,busy:s.busy,lastRole:s.lastRole,hasDraft:Boolean(s.editorText),finalEvidence:Boolean(s.finalEvidence),renderFailed:Boolean(s.renderFailed)});return false;}if(m.type==='TICK'){cycle().then(()=>r({ok:true})).catch(e=>r({ok:false,error:String(e)}));return true;}});
   observer=new MutationObserver(()=>{if(!running&&!scheduled)scheduled=setTimeout(()=>{scheduled=null;void cycle();},150);});
   observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['aria-label','data-testid','aria-busy','disabled','data-is-streaming','data-talvt-turn-state']});
   timer=setInterval(()=>void cycle(),15000);
