@@ -76,9 +76,10 @@ function paint(){
   $('lastError').hidden=remoteDone||!session?.lastError;$('lastError').textContent=remoteDone?'':session?.lastError||'';$('openOwner').hidden=!other;
   $('dismissReviewRow').hidden=!session?.reviewRequired||Boolean(session?.enabled)||session?.state!=='NEEDS_USER'||other;
   $('dismissReview').disabled=saving;
-  $('reviewResumeRow').hidden=!session?.reviewRequired||!session?.enabled||other||remoteDone;
-  $('reviewContinue').disabled=saving||!health||!['OBSERVING','AWAITING_REPLY'].includes(state)||Boolean(session?.reviewOverrideKey);
-  $('toggleSession').disabled=!id||other||saving||remoteDone||(mission?.mode==='mission'&&mission.state==='CANCELLED');$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':'Start';$('toggleSession').classList.toggle('danger',on);
+  const pausedReview=Boolean(session?.reviewRequired&&!session?.enabled&&state==='NEEDS_USER');
+  $('reviewResumeRow').hidden=!session?.reviewRequired||other||remoteDone||(!on&&state!=='NEEDS_USER');
+  $('reviewContinue').disabled=saving||Boolean(session?.reviewOverrideKey)||(!pausedReview&&(!on||!health||!['OBSERVING','AWAITING_REPLY'].includes(state)));
+  $('toggleSession').disabled=!id||other||saving||remoteDone||pausedReview||(mission?.mode==='mission'&&mission.state==='CANCELLED');$('toggleSession').textContent=other?'Owned by another tab':on?'Pause':pausedReview?'Review required':'Start';$('toggleSession').classList.toggle('danger',on);
   $('kickoff').disabled=!on||!health||health.busy||state!=='OBSERVING'||Boolean(session?.lastClaim)||Boolean(session?.kickoffRequested)||(mission?.mode==='mission'&&mission.instructionState!=='sent')||saving;
   $('message').disabled=(other&&scope!=='global')||(scope!=='global'&&!id);sourceLabel();
 }
@@ -121,7 +122,7 @@ $('dismissReview').onclick=guard(async()=>{
 });
 $('reviewContinue').onclick=guard(async()=>{
   if(!confirm('I have completed the requested human action and reviewed the latest assistant response. Authorize exactly ONE continuation of this same reply?'))return;
-  await ask({type:'REQUEST_REVIEW_CONTINUE',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One reviewed continuation authorized.');
+  await ask({type:'REQUEST_REVIEW_CONTINUE',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One reviewed continuation authorized. No duplicate sends.');
 });
 $('kickoff').onclick=guard(async()=>{await saveMessage();await ask({type:'REQUEST_KICKOFF',id,tabId:tab.id});await wake(tab.id);await refresh();notify('One continuation requested.');});
 $('openOwner').onclick=guard(()=>focusTab(session.ownerTabId));
