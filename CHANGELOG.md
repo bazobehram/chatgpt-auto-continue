@@ -1,3 +1,12 @@
+## v0.7.4 — Preserve human-attention state across Resume
+
+- Mission Signal **Resume** and ordinary **Start** now refuse unresolved human-review and uncertain-send states instead of creating a fresh monitoring session that silently loses recovery data.
+- Repeated Pause preserves the original `NEEDS_USER` warning and its reply identity.
+- Paused legacy review state can be dismissed or continued using the explicit existing review controls.
+- Resume's activity display distinguishes observation from a new confirmed submission; it does not claim that another continuation was sent.
+- Removed the obsolete weaker `START_REVIEW_CONTINUE` command; all reviewed sends use the single verified `REQUEST_REVIEW_CONTINUE` path and existing write-ahead send journal.
+- Controller and Chromium regression tests cover blocked Resume, approval identity preservation, and duplicate-send safeguards.
+
 ## v0.7.3 — Stale approval recovery and mission-switch safety
 
 - Starting a new Mission Signal mission clears the previous session's approval flag, old review key, stale send journal, and outdated warning without deleting mission history.
