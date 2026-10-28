@@ -53,11 +53,11 @@ async function rememberNotice(id,item){
   if(entries[0]&&entries[0].generation===item.generation&&entries[0].state===item.state&&entries[0].reason===item.reason)return;
   await chrome.storage.local.set({[noticesKey(id)]:[item,...entries].slice(0,20)});
 }
-async function pause(id,reason,state='PAUSED'){
+async function pause(id,reason,state='PAUSED',reviewReplyKey=null){
   const s=await read(id);if(!s)return;
   const nextState=['PAUSED','NEEDS_USER','COMPLETED','CANCELLED','ERROR'].includes(state)?state:'PAUSED';
   const explanation=String(reason).slice(0,360);
-  await write(id,{...s,enabled:false,state:nextState,lastError:explanation,reviewRequired:nextState==='NEEDS_USER'?/human approval required|ChatGPT requires your attention/i.test(explanation):nextState==='COMPLETED'||nextState==='CANCELLED'?false:Boolean(s.reviewRequired),reviewOverrideKey:null});
+  await write(id,{...s,enabled:false,state:nextState,lastError:explanation,reviewRequired:nextState==='NEEDS_USER'?/human approval required|ChatGPT requires your attention/i.test(explanation):nextState==='COMPLETED'||nextState==='CANCELLED'?false:Boolean(s.reviewRequired),reviewOverrideKey:null,reviewReplyKey:nextState==='NEEDS_USER'&&/human approval required/i.test(explanation)?String(reviewReplyKey||s.reviewReplyKey||'').slice(0,160)||null:s.reviewReplyKey||null});
   if((nextState==='COMPLETED'||nextState==='CANCELLED'||nextState==='ERROR'||nextState==='NEEDS_USER'||/uncertain|disconnected|failed|unavailable|error|exhausted/i.test(explanation))
     &&(s.enabled||s.state!==nextState||s.lastError!==explanation)){
     const m=await MissionSignal.get(id);
@@ -163,7 +163,7 @@ async function dispatch(m,sender){
         // to cancel a registered mission on the remote service.
         await MissionSignal.put(m.id,{mode:'mission'});
         const previous=await read(m.id);
-        if(previous)await write(m.id,{...previous,enabled:false,ownerTabId:null,state:'PAUSED',missionId:null,lastClaim:null,lastHandled:null,baseline:null,reviewRequired:false,reviewOverrideKey:null,kickoffRequested:false,lastError:'',waitingSince:0,documentId:null});
+        if(previous)await write(m.id,{...previous,enabled:false,ownerTabId:null,state:'PAUSED',missionId:null,lastClaim:null,lastHandled:null,baseline:null,reviewRequired:false,reviewOverrideKey:null,kickoffRequested:false,lastError:'',waitingSince:0,documentId:null,reviewReplyKey:null});
         return {ok:true,replaced:current.id||null};
       }
       else {
@@ -174,7 +174,7 @@ async function dispatch(m,sender){
           // Mode changes clear ONLY obsolete human-review UI state. They never
           // clear an uncertain send journal or fabricate a completed mission.
           if(previous?.reviewRequired&&previous.state==='NEEDS_USER')
-            await write(m.id,{...previous,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,lastError:''});
+            await write(m.id,{...previous,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastError:''});
         }
       }
       return {ok:true};});
@@ -266,7 +266,15 @@ async function dispatch(m,sender){
       if(!current||current.enabled)throw Error('Pause automation before dismissing a warning.');
       if(!current.reviewRequired||current.state!=='NEEDS_USER')
         throw Error('There is no human-approval warning to dismiss.');
-      await write(m.id,{...current,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,lastError:''});
+      let replyKey=current.reviewReplyKey||null;
+      try{
+        const live=await chrome.tabs.sendMessage(tab.id,{type:'REPLY_IDENTITY'});
+        if(live?.ok&&live.id===m.id&&live.lastRole==='assistant'&&!live.busy&&live.assistantKey)
+          replyKey=live.assistantKey;
+      }catch{}
+      if(!replyKey)throw Error('Cannot identify the reply to dismiss. Refresh the conversation tab and try again.');
+      // Mark this exact prior response as handled. Dismiss never submits a message.
+      await write(m.id,{...current,state:'PAUSED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastHandled:replyKey,lastError:''});
       await diagnostic(m.id,'review_dismissed','user_chose_ignore','PAUSED');
       return {ok:true};
     });
@@ -356,7 +364,7 @@ async function dispatch(m,sender){
       await write(m.id,{...s,state:'AWAITING_REPLY',waitingSince:Date.now(),lastActivity:Date.now()});
       const mission=await MissionSignal.get(m.id);if(mission.mode==='mission'&&mission.connection==='disconnected'&&(mission.offlineAttempts||0)>=5)await pause(m.id,'Mission Signal disconnected. Five offline attempts exhausted.');return {ok:true};
     }
-    if(m.type==='PAUSE'){await pause(m.id,m.reason||'Paused',m.state);return {ok:true};}
+    if(m.type==='PAUSE'){await pause(m.id,m.reason||'Paused',m.state,m.reviewReplyKey);return {ok:true};}
     if(m.type==='RELOAD'){
       if(!(await config()).autoReload || Date.now()-(s.state==='AWAITING_REPLY'?(s.waitingSince||s.lastActivity):s.lastActivity)<(await config()).stallSeconds*1000 || !['GENERATING','AWAITING_REPLY'].includes(s.state)||s.recoveryCount>=1)return {ok:false,reason:'not recoverable'};
       await write(m.id,{...s,state:'RECOVERING',recoveryCount:1,lastError:'One recovery reload attempted; inspect page and re-enable manually.'});
