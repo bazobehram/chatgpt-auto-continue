@@ -19,8 +19,8 @@ globalThis.MissionSignal=(()=>{
   const connection=async()=>(await chrome.storage.local.get('missionConnection')).missionConnection||{endpoint:ENDPOINT};
   const summary=m=>({mode:m.mode||'local',id:m.id||null,state:m.state||null,connection:m.connection||'unconfigured',offlineAttempts:m.offlineAttempts||0,instructionState:m.instruction?.state||null,lastChecked:m.lastChecked||0});
   function validateEndpoint(raw){const url=new URL(String(raw||''));if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!(url.protocol==='https:'||(url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname))))throw Error('Use an HTTPS service origin (HTTP allowed only for localhost).');return url.origin;}
-  async function request(path,token,method='GET',body){
-    const c=await connection();const endpoint=validateEndpoint(c.endpoint);
+  async function request(path,token,method='GET',body,endpointOverride){
+    const c=await connection();const endpoint=validateEndpoint(endpointOverride||c.endpoint);
     const response=await fetch(endpoint+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000),redirect:'error',cache:'no-store',credentials:'omit'});
     if(!response.ok){
       if(response.status===401)throw Error('Enrollment key rejected by your self-hosted server (HTTP 401).');
@@ -92,10 +92,10 @@ globalThis.MissionSignal=(()=>{
     await put(id,next);return next;
   }
   async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);if(m.mode==='mission'&&mode==='local'&&m.registered&&m.state==='ACTIVE')throw Error('Cancel the active mission before switching to Local Only.');await put(id,{...m,mode});}
-  async function verifyEnrollment(enrollment){
+  async function verifyEnrollment(enrollment,endpoint){
     const candidate=String(enrollment||'').trim();
     if(!candidate)throw Error('Enter the enrollment key before saving.');
-    const r=await request('/v1/enrollment/verify',candidate,'POST');
+    const r=await request('/v1/enrollment/verify',candidate,'POST',undefined,endpoint);
     if(r?.configured!==true)throw Error('Enrollment verification failed.');
     return true;
   }
