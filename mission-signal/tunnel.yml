@@ -1,6 +1,7 @@
-tunnel: 8b117f4d-236e-4d51-937c-1c812fe543a5
+# Optional example — configure your own Cloudflare tunnel and domain.
+tunnel: REPLACE_WITH_YOUR_TUNNEL_ID
 credentials-file: /run/secrets/tunnel.json
 ingress:
-  - hostname: mission-signal.synovaq.org
+  - hostname: missions.example.org
     service: http://api:8080
   - service: http_status:404
