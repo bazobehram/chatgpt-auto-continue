@@ -1,7 +1,7 @@
 'use strict';
 // Runs only in the extension worker. Capabilities never enter a ChatGPT message.
 globalThis.MissionSignal=(()=>{
-  const ENDPOINT='https://mission-signal.synovaq.org';
+  const ENDPOINT='';
   const key=id=>'mission:'+id;
   const get=async id=>(await chrome.storage.local.get(key(id)))[key(id)]||{mode:'local'};
   const historyKey=id=>'mission-history:'+id;
@@ -18,12 +18,13 @@ globalThis.MissionSignal=(()=>{
   };
   const connection=async()=>(await chrome.storage.local.get('missionConnection')).missionConnection||{endpoint:ENDPOINT};
   const summary=m=>({mode:m.mode||'local',id:m.id||null,state:m.state||null,connection:m.connection||'unconfigured',offlineAttempts:m.offlineAttempts||0,instructionState:m.instruction?.state||null,lastChecked:m.lastChecked||0});
+  function validateEndpoint(raw){const url=new URL(String(raw||''));if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!(url.protocol==='https:'||(url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(url.hostname))))throw Error('Use an HTTPS service origin (HTTP allowed only for localhost).');return url.origin;}
   async function request(path,token,method='GET',body){
-    const c=await connection();if(c.endpoint!==ENDPOINT)throw Error('Unsupported Mission Signal endpoint');
-    const response=await fetch(ENDPOINT+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000),redirect:'error',cache:'no-store',credentials:'omit'});
+    const c=await connection();const endpoint=validateEndpoint(c.endpoint);
+    const response=await fetch(endpoint+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000),redirect:'error',cache:'no-store',credentials:'omit'});
     if(!response.ok){
-      if(response.status===401)throw Error('Enrollment key rejected by homeserver (HTTP 401).');
-      if(response.status===403)throw Error('Extension origin rejected by homeserver (HTTP 403).');
+      if(response.status===401)throw Error('Enrollment key rejected by your self-hosted server (HTTP 401).');
+      if(response.status===403)throw Error('Extension origin rejected by your self-hosted server (HTTP 403).');
       if(response.status===409)throw Error('Mission identity conflict (HTTP 409).');
       throw Error('Mission Signal request failed (HTTP '+response.status+').');
     }
@@ -52,7 +53,7 @@ globalThis.MissionSignal=(()=>{
     }
     return synchronize(id,true);
   }
-  const instruction=id=>`Mission Signal instruction (one time). Mission ID: ${id}. Complete the agreed roadmap first. Verify every task and its acceptance checks before completion. Intermediate milestones must not trigger completion. Only after the entire roadmap is verified finished, use CommandCore's existing shell.exec on the device named homeserver to run: mission-signal complete ${id}. The homeserver CLI authenticates locally; no secret is included here. If completion fails, report it and do not claim the mission is complete.`;
+  const instruction=id=>`Mission Signal instruction (one time). Mission ID: ${id}. Finish and verify the agreed work before marking it complete. If you have access to the user's authorized Mission Signal CLI, run mission-signal complete ${id} on their configured server only after verification. Otherwise ask the user to complete it there. Do not claim completion without a successful signal. Never request or share credentials.`;
   async function claimInstruction(id){
     const m=await synchronize(id,true);
     if(m.connection!=='connected'||m.state!=='ACTIVE'||m.instruction?.state!=='pending')return null;
@@ -98,6 +99,6 @@ globalThis.MissionSignal=(()=>{
     if(r?.configured!==true)throw Error('Enrollment verification failed.');
     return true;
   }
-  async function configure(enrollment){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:ENDPOINT,enrollment:String(enrollment||c.enrollment||'').trim()}});}
-  return {get,put,getHistory,verifyEnrollment,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
+  async function configure(enrollment,endpoint){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:validateEndpoint(endpoint||c.endpoint),enrollment:String(enrollment||c.enrollment||'').trim()}});}
+  return {get,put,getHistory,validateEndpoint,verifyEnrollment,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
 })();
