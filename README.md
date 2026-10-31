@@ -62,7 +62,7 @@ npm run test:all
 python tests/smoke.py
 ```
 
-Browser tests may require a Playwright Chromium executable. Fixtures do not prove behavior in a real authenticated account. See [TEST_REPORT.md](TEST_REPORT.md).
+Browser tests may require a Playwright Chromium executable. Fixtures do not prove behavior in a real authenticated account. See the GitHub Actions acceptance workflow; live authenticated browser verification is required before public release.
 
 ## Support and contribute
 
