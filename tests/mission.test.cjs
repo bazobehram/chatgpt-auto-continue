@@ -10,7 +10,7 @@ const root=path.resolve(__dirname,'..');
  const check=async(name,fn)=>{try{await fn();results.push({name,status:'PASS'});console.log('PASS '+name);}catch(e){results.push({name,status:'FAIL',error:e.stack});throw e;}};
  try{
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(__dirname,'mock_chat.html'),'utf8')}));
-  await context.route('https://mission-signal.synovaq.org/**',async route=>{
+  await context.route('https://missions.example.org/**',async route=>{
    requests++;if(!online)return route.abort('connectionfailed');const req=route.request();let result;
    if(req.method()==='POST'&&req.url().endsWith('/enrollment/verify')){
      result={configured:true};
@@ -36,7 +36,8 @@ const root=path.resolve(__dirname,'..');
   const start=async c=>{assert.equal((await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:true})).ok,true);await tick(c);};
   const reply=async(c,text='Next work remains.')=>{await c.page.evaluate(text=>{mock.setBusy(false);mock.assistant(text,false);},text);await tick(c);};
   const instruction=async c=>{await start(c);await wait(async()=>(await sent(c)).length===1,'one instruction');await wait(async()=>(await status(c)).mission.instructionState==='sent','acknowledged instruction');};
-  await rpc({type:'SET_SETTINGS',settings:{settleSeconds:3,maxTurns:20}});await rpc({type:'SET_MISSION_CONNECTION',enrollment:'fixture-secret-only'});
+  await rpc({type:'SET_SETTINGS',settings:{settleSeconds:3,maxTurns:20}});await control.evaluate(async()=>chrome.permissions.request({origins:['https://missions.example.org/*']}));
+  await rpc({type:'SET_MISSION_CONNECTION',endpoint:'https://missions.example.org',enrollment:'fixture-secret-only'});
   const a=await newChat();
   await check('Registration and one automatically acknowledged instruction; no secrets in chat',async()=>{
    await instruction(a);const text=(await sent(a))[0],s=await status(a);assert.match(text,/mission-signal complete/);assert.ok(!text.includes('fixture-secret-only'));assert.equal(s.session.turns,0);assert.equal(missions.size,1);
