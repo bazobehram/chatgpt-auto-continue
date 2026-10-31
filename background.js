@@ -114,8 +114,8 @@ async function dispatch(m,sender){
     const c=await MissionSignal.connection();
     const candidate=String(m.enrollment||'').trim()||c.enrollment;
     if(!candidate)throw Error('Enter an enrollment key.');
-    const endpoint=MissionSignal.validateEndpoint(m.endpoint||c.endpoint);await MissionSignal.configure('',endpoint);await MissionSignal.verifyEnrollment(candidate);
-    if(String(m.enrollment||'').trim())await MissionSignal.configure(candidate,endpoint);
+    const endpoint=MissionSignal.validateEndpoint(m.endpoint||c.endpoint);await MissionSignal.verifyEnrollment(candidate,endpoint);
+    await MissionSignal.configure(candidate,endpoint);
     return {ok:true,verified:true};
   }
   if(m.type==='CANCEL_MISSION'){
