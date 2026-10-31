@@ -1,55 +1,33 @@
-# Mission Signal v0.1.0 deployment
+# Mission Signal — self-hosted deployment
 
-## Actual deployment
+Mission Signal is an **optional**, separately deployed completion-state service. Local Only mode does not require it.
 
-- Verified target: Ubuntu24.04 x86_64 hostname `homeserver`, CommandCore immutable device `171c2145-7fb1-4263-bf5d-a266b3f24123`.
-- Directory `/opt/mission-signal`, Compose project `mission-signal`.
-- Containers `mission-signal-api-1` and `mission-signal-tunnel-1`.
-- HTTPS `https://mission-signal.synovaq.org`, independent Cloudflare tunnel `8b117f4d-236e-4d51-937c-1c812fe543a5`.
-- API listens on host loopback `127.0.0.1:18865`; no public origin port.
-- SQLite and mission-specific CLI capabilities persist under `/opt/mission-signal/data`.
-- Enrollment and independent tunnel credentials are private files under `/opt/mission-signal/secrets`, excluded from source/build context.
-- CLI `/usr/local/bin/mission-signal`, Python standard library only.
+## Deployment requirements
 
-The Cloudflare account certificate was used to create only the separate named tunnel and its previously unused CNAME. The existing CommandCore tunnel, deployment, credentials, containers, volumes and OAuth configuration were not changed. There is no new CommandCore tool or source patch.
+- A server you control, Python runtime or Docker, and a stable HTTPS origin
+- A strong, separately generated enrollment credential (never committed)
+- Persistent private storage for SQLite state and completion capabilities
+- A configured extension origin accepted by the server
+- TLS termination and an appropriate backup strategy
 
-## Authentication
+Use `mission-signal/compose.yaml` as a starting point and review every bind mount, secret path and ingress setting before deploying. Replace all example hosts, paths, and credentials with your own values. Do not expose an unauthenticated completion capability.
 
-Creation requires an enrollment key. Chrome generates a separate read token and random mission ID, persists them before registration, and retries registration idempotently. The API stores token hashes. Completion uses a different per-mission capability, written with private permissions on homeserver and never returned to Chrome.
+## Extension origins and CORS
 
-The existing authorized homeserver OS identity runs:
+Each unpacked extension may have a different `chrome-extension://<extension-id>` origin. The service currently checks a single origin from `MISSION_EXTENSION_ORIGIN`. Configure this variable to **your own** installed extension origin. There is no universal published extension ID yet. If changing this behavior to support multiple origin IDs, validate every origin and retain credential authentication; do not use an unconditional allow-all origin policy.
 
-```sh
+## Configuration
+
+Configure the extension's **Mission Signal connection** settings with your own HTTPS origin and enrollment key; approve the additional browser host permission. Never reuse a third-party enrollment key or connect to an unknown server.
+
+The service stores hashed authentication capabilities. The extension receives a mission read capability, not the completion capability. An authorized operator can mark independently verified work complete with the service CLI:
+
+```bash
 mission-signal complete <MISSION_ID>
 ```
 
-The CLI reads the local private capability and submits to loopback. Knowing a Mission ID, a different mission's credential, or the read token cannot authorize completion. Repeated authenticated completion preserves the first completion timestamp.
+A model running without authorized access to that CLI cannot independently signal completion. Users should complete their own missions after checking the work.
 
-## Operations
+## Important
 
-Use explicit project and file selectors so production projects cannot be affected:
-
-```sh
-docker compose -p mission-signal -f /opt/mission-signal/compose.yaml ps
-docker compose -p mission-signal -f /opt/mission-signal/compose.yaml logs --tail 50 api
-docker compose -p mission-signal -f /opt/mission-signal/compose.yaml restart api
-curl --fail https://mission-signal.synovaq.org/health
-```
-
-Both containers use restart unless-stopped, bounded memory/CPU/logging, dropped capabilities and read-only root filesystems. API health checks run every30 seconds. SQLite uses WAL and bounded busy waits. Back up the data directory and private credentials together; do not publish either. Do not remove data/secrets when updating the image.
-
-## Verified live service checks
-
-Public HTTPS health and authenticated creation succeeded. Creation is idempotent and bound to both conversation ID and read token. Missing credentials/read-only credentials cannot complete. CommandCore shell execution successfully invoked the installed CLI. Repeated completion was idempotent. Restarting only the API container preserved the COMPLETED state and timestamp over HTTPS. Production container identity/start/restart metadata matched the saved baseline after these operations.
-
-At the later final audit, CommandCore was still healthy but its container had been replaced at2026-10-25T16:40:16 UTC during concurrent work. This replacement was not an operation performed by the Mission Signal deployment commands. Original/final metadata are retained on homeserver. Do not interpret the earlier successful baseline comparison as a claim that unrelated production work stopped for this session.
-
-One probe using Python's default User-Agent received Cloudflare403; using an explicit application User-Agent succeeded. No Cloudflare security setting was weakened. The Chrome worker uses the normal browser User-Agent.
-
-## Browser acceptance scope
-
-The existing Chrome installation was reloaded as v0.5.0 with the same extension ID and the dedicated HTTPS host permission. Its actual popup and new icon were observed. The enrollment key was provisioned via the popup password field, verified saved/cleared, and its private temporary transfer file removed. Local Only remains the default for existing conversations.
-
-After renewed live-test authorization, the full authenticated sequence passed on 2026-10-25: one automatic extension instruction, ChatGPT invoking the existing CommandCore shell.exec, homeserver CLI completion, authoritative COMPLETED state, and automatic extension stop. Mission `83067ead-6cdf-48c5-b997-5d89bb741dd7` matched QA conversation `6ade545e-fcf4-83eb-892c-d7186accd82e`. A separate read-only SQLite audit confirmed completion. The embedded CommandCore card had a display failure, but execution and completion succeeded.
-
-The existing extension was reloaded with final v0.5.0 source before that test. Refresh and QA tab closure/reopening retained Completed/paused with one setup message and no continuations. Created QA tabs were closed; zero active backend missions remained. Worker restart and concurrent-sender fault tests are reported separately as isolated Chromium checks.
+The old internal deployment notes, infrastructure IDs and live QA records are not part of the public deployment recipe. Do not publish previous repository history or historical artifacts until they have been reviewed and, if necessary, excluded from a fresh public-history repository.
