@@ -73,3 +73,7 @@ Pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [S
 ## Project status
 
 This source is currently being prepared for public review. Chrome Web Store availability is **not yet claimed**. Check repository releases and security notes before installing. This project is independently developed and is not affiliated with or endorsed by OpenAI.
+
+## Free software license
+
+ChatGPT Auto-Continue is **free software**, released under the **GNU General Public License, version 3 only (GPL-3.0-only)**. You may run, study, modify and redistribute it under the license terms. Distributions of modified GPL-covered versions must provide the corresponding source and preserve the required notices. See [LICENSE](LICENSE). This project does not grant additional permission to relicense contributions as proprietary software.
