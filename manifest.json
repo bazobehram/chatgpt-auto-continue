@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Auto-Continue (Personal)",
-  "description": "Personal, fail-closed, session-scoped ChatGPT continuation controller with a watchdog and write-ahead send journal.",
+  "name": "ChatGPT Auto-Continue",
+  "description": "Open-source, user-controlled continuation for ChatGPT with cautious recovery and optional self-hosted completion signaling.",
   "version": "0.7.4",
   "minimum_chrome_version": "120",
   "permissions": [
@@ -10,8 +10,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://mission-signal.synovaq.org/*"
+    "https://chatgpt.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -41,5 +40,10 @@
     "32": "icons/icon-32.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
-  }
+  },
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ]
 }
