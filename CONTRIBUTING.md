@@ -33,3 +33,7 @@ Include expected behavior, actual behavior, steps to reproduce, Chrome and exten
 - [ ] Existing approval, ownership, journal, and recovery behavior remains safe
 
 Be respectful and constructive in discussions. Maintainers may ask for changes to meet the safety bar.
+
+## License for contributions
+
+By submitting a contribution, you agree that your contribution will be licensed under **GPL-3.0-only** as part of this project. Only submit code and assets you have the right to contribute under these terms. Preserve copyright and attribution notices, and disclose third-party licenses in your pull request.
