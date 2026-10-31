@@ -35,7 +35,7 @@
 
 ## v0.6.1 — Enrollment verification and actionable connection errors
 
-- Saving a Mission Signal enrollment key now verifies it against the homeserver without registering a mission. Invalid keys are rejected and never replace the previously saved key.
+- Saving a Mission Signal enrollment key now verifies it against the self-hosted server without registering a mission. Invalid keys are rejected and never replace the previously saved key.
 - The password field deliberately stays empty after saving; this is not evidence that the key was lost.
 - Registration reports HTTP 401 (incorrect enrollment key), HTTP 403 (extension origin rejected), or other HTTP errors instead of only saying unavailable.
 - The service adds a non-mutating authenticated POST /v1/enrollment/verify endpoint. Deploy the server update before reloading the extension.
@@ -44,13 +44,13 @@
 
 - Separate Local Only and Mission Signal numeric-limit preferences. Local Only retains its Limited/Unlimited controls; Mission Signal defaults to remote-completion-driven continuation, with an optional independent cap in Advanced settings.
 - Clear Resume, Cancel Mission, and New Mission actions with confirmation and prevention of abandoned active remote missions.
-- Mission Signal service v0.2.0 supports authenticated, idempotent cancellation, without modifying CommandCore.
+- Mission Signal service v0.2.0 supports authenticated, idempotent cancellation, without modifying external command runner.
 - Completed and cancelled Mission IDs, Local Only completion events, and important error notices remain available in History after reset, refresh, mode switching, and worker restarts.
 - Popup displays completed/cancelled terminal status, disables invalid Start actions, and hides irrelevant Local Only limit controls in Mission Signal mode.
 - Safer pre-click abort handling, manual instruction reconciliation, bounded composer readiness, preserved journals, serialized status polling, and graceful teardown of invalidated content scripts.
 - Expanded controller and Chromium UI coverage for lifecycle transitions, independent settings, offline limits, history persistence, and cancellation.
 
-**Verification:** 59/59 controller tests passed on an isolated homeserver worktree. Complete Chromium/service CI and authenticated user-Chrome acceptance are independently tracked; do not claim release acceptance until both are verified.
+**Verification:** 59/59 controller tests passed on an isolated self-hosted server worktree. Complete Chromium/service CI and authenticated user-Chrome acceptance are independently tracked; do not claim release acceptance until both are verified.
 
 ## v0.5.1 — Mission instruction recovery
 
@@ -64,13 +64,13 @@
 
 # v0.5.0 — independent Mission Signal
 
-- Independent FastAPI/SQLite Mission Signal v0.1.0 deployed on Ubuntu homeserver with a dedicated Docker Compose project and separate Cloudflare HTTPS tunnel.
+- Independent FastAPI/SQLite Mission Signal v0.1.0 deployed on Ubuntu self-hosted server with a dedicated Docker Compose project and separate Cloudflare HTTPS tunnel.
 - Explicit Local Only/Mission Signal modes, per-conversation mission identity, automatic one-time instruction with verified transcript acknowledgment, and no secrets in chat.
 - Forced remote completion check before each continuation; persistent five-attempt offline grace applies to both Limited and Unlimited. Reconnection synchronizes before another send.
 - Same-mission resume preserves the continuation count and journal, including after refresh/browser startup. Unknown instruction outcomes require review and are never replayed automatically.
 - Mission-specific read/completion capabilities, private local completion CLI, idempotent server completion, persistent storage and automatic container restart.
 - New vector-authored extension icon and compact connection/recovery UI. Existing titles, messages, ownership and Local Only behavior retained.
-- Existing CommandCore tools, source, OAuth and production deployment were not modified.
+- Existing external command runner tools, source, OAuth and production deployment were not modified.
 - Final source acceptance uses isolated Chromium at the user's request. The earlier installed v0.5.0 reload and enrollment provisioning were verified; final resume safeguard needs another Chrome reload.
 
 # v0.4.2 — conversation persistence and acceptance
