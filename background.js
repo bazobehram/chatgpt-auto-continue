@@ -114,8 +114,8 @@ async function dispatch(m,sender){
     const c=await MissionSignal.connection();
     const candidate=String(m.enrollment||'').trim()||c.enrollment;
     if(!candidate)throw Error('Enter an enrollment key.');
-    await MissionSignal.verifyEnrollment(candidate);
-    if(String(m.enrollment||'').trim())await MissionSignal.configure(candidate);
+    const endpoint=MissionSignal.validateEndpoint(m.endpoint||c.endpoint);await MissionSignal.configure('',endpoint);await MissionSignal.verifyEnrollment(candidate);
+    if(String(m.enrollment||'').trim())await MissionSignal.configure(candidate,endpoint);
     return {ok:true,verified:true};
   }
   if(m.type==='CANCEL_MISSION'){
@@ -130,7 +130,7 @@ async function dispatch(m,sender){
       try{
         const remote=await MissionSignal.cancel(m.id);
         const latest=await read(m.id);
-        if(latest)await write(m.id,{...latest,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled on homeserver.'});
+        if(latest)await write(m.id,{...latest,state:remote.state==='COMPLETED'?'COMPLETED':'CANCELLED',reviewRequired:false,reviewOverrideKey:null,reviewReplyKey:null,lastError:remote.state==='COMPLETED'?'Remote mission already completed.':'Mission cancelled on Mission Signal server.'});
         return {ok:true,state:remote.state};
       }catch(error){
         const latest=await read(m.id);
