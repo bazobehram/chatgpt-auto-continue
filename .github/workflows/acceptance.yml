@@ -1,12 +1,14 @@
 name: Extension Acceptance
 on:
   push:
-    branches: [feature/mission-lifecycle-final]
+    branches: [main, 'release/**']
   pull_request:
   workflow_dispatch:
 concurrency:
   group: auto-continue-${{ github.ref }}
   cancel-in-progress: true
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest

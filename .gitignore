@@ -12,3 +12,7 @@ data/
 *.log
 tests/*.png
 *.zip
+
+# Generated QA outputs (may contain local conversation identifiers)
+tests/*-results.json
+tests/final-source-sha256.json

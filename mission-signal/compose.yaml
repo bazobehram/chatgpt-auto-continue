@@ -2,7 +2,9 @@ name: mission-signal
 services:
   api:
     build: .
-    image: mission-signal:0.1.0
+    image: mission-signal:0.2.0
+    environment:
+      MISSION_EXTENSION_ORIGIN: ${MISSION_EXTENSION_ORIGIN:?Set the installed Chrome extension origin}
     restart: unless-stopped
     init: true
     read_only: true
