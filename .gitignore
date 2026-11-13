@@ -12,3 +12,9 @@ data/
 *.log
 tests/*.png
 *.zip
+
+# Local server-specific configuration and generated QA artifacts
+mission-signal/tunnel.yml
+tests/*-results.json
+tests/final-source-sha256.json
+tests/live-mission-restored.txt
