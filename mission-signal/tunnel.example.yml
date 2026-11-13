@@ -1,0 +1,8 @@
+# Optional Cloudflare Tunnel example. Copy to tunnel.yml and edit locally.
+# Never commit your real tunnel credentials or account-specific values.
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: /run/secrets/tunnel.json
+ingress:
+  - hostname: missions.example.org
+    service: http://api:8080
+  - service: http_status:404
