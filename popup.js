@@ -93,7 +93,7 @@ async function refresh(initial=false){
       $('conversation').textContent=id?(tab.title||'ChatGPT conversation').replace(/\s*[|–-]\s*ChatGPT\s*$/i,''):'Open a saved ChatGPT conversation';
       $('message').value=session?.override||settings.message;
       for(const k of ['settleSeconds','stallSeconds','watchdogSeconds'])$(k).value=settings[k];$('autoReload').checked=settings.autoReload;
-      const c=await ask({type:'GET_MISSION_CONNECTION'});$('missionEndpoint').textContent=c.endpoint;$('missionConfigured').textContent=c.configured?'Enrollment key stored locally (not yet verified this session).':'Configure before selecting Mission Signal.';
+      const c=await ask({type:'GET_MISSION_CONNECTION'});if(document.activeElement!==$('missionEndpoint'))$('missionEndpoint').value=c.endpoint||'';$('missionConfigured').textContent=c.configured?'Enrollment key stored locally (not yet verified this session).':'Configure before selecting Mission Signal.';
     }else if(!dirty&&!saving&&document.activeElement!==$('message'))$('message').value=scope==='global'?settings.message:session?.override||settings.message;
     paint();await renderTabs($('tabsPanel').open);
   }finally{refreshing=false;if(refreshQueued&&!closed){refreshQueued=false;scheduleRefresh();}}
@@ -147,7 +147,19 @@ async function saveMissionCap(){
 }
 $('missionCap').addEventListener('change',guard(saveMissionCap));
 $('missionCapNumber').addEventListener('change',guard(saveMissionCap));
-$('missionConnectionForm').onsubmit=e=>{e.preventDefault();guard(async()=>{await ask({type:'SET_MISSION_CONNECTION',enrollment:$('enrollment').value});$('enrollment').value='';const c=await ask({type:'GET_MISSION_CONNECTION'});$('missionConfigured').textContent=c.configured?'Enrollment key verified and saved.':'Enrollment key not configured.';notify('Enrollment verified by homeserver and saved.');})();};
+$('missionConnectionForm').onsubmit=e=>{e.preventDefault();guard(async()=>{
+  const url=new URL($('missionEndpoint').value.trim());
+  if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)
+    throw Error('Enter a bare HTTPS server URL, without a path or credentials.');
+  const origin=url.origin;
+  const granted=await chrome.permissions.request({origins:[origin+'/*']});
+  if(!granted)throw Error('Server access permission was denied. Nothing was saved.');
+  await ask({type:'SET_MISSION_CONNECTION',endpoint:origin,enrollment:$('enrollment').value});
+  $('enrollment').value='';
+  const c=await ask({type:'GET_MISSION_CONNECTION'});
+  $('missionConfigured').textContent=c.configured?'Enrollment key verified and saved.':'Enrollment key not configured.';
+  notify('Your server connection was verified and saved.');
+})();};
 $('settingsForm').onsubmit=e=>{e.preventDefault();guard(async()=>{const next={};for(const k of ['settleSeconds','stallSeconds','watchdogSeconds'])next[k]=$(k).value;next.autoReload=$('autoReload').checked;await ask({type:'SET_SETTINGS',settings:next});await refresh();notify('Settings saved.');})();};
 async function renderTabs(expanded){
   const tabs=await chrome.tabs.query({url:'https://chatgpt.com/*'}),groups=new Map();
