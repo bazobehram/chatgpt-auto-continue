@@ -29,7 +29,7 @@ function harness(){
 function message(role,txt,id){return {role,innerText:txt,getAttribute(k){return {'data-message-author-role':role,'data-message-id':id,'data-complete':'true'}[k]||null},closest:()=>null};}
 async function activate(h){const r=await h.rpc({type:'SET_SESSION',id:CHAT,tabId:10,enabled:true,override:''});if(!r.ok)console.log('activation error:',r);assert.equal(r.ok,true);}
 const s=h=>h.rpc({type:'STATUS',id:CHAT});
-test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.7.4');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*','https://mission-signal.synovaq.org/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
+test('manifest metadata, permissions, test structure',()=>{const m=JSON.parse(fs.readFileSync(path.join(root,'manifest.json')));assert.equal(m.version,'0.7.5');assert.equal(m.manifest_version,3);assert.deepEqual(m.host_permissions,['https://chatgpt.com/*']);assert.deepEqual(m.optional_host_permissions,['https://*/*']);assert.deepEqual(m.permissions,['storage','alarms','tabs']);});
 test('activation never sends against an old answer',async()=>{const h=harness(),c=h.fakePage();await activate(h);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);assert.equal((await s(h)).session.lastHandled,'assistant-1');});
 test('waits for a finished response, sends once, then a next response, respects cap',async()=>{
  const h=harness(),c=h.fakePage();await activate(h);await c.tick();c.page.user('start');c.page.assistant('partial',true);await c.tick();h.updateClock(12000);await c.tick();assert.deepEqual(c.page.sent,[]);
@@ -100,7 +100,7 @@ async function missionHarness(){
   if(options.method==='POST'){const body=JSON.parse(options.body);remote.missions.set(body.id,body);return {ok:true,json:async()=>({id:body.id,conversation_id:body.conversation_id,state:remote.state})};}
   const id=url.split('/').at(-1),body=remote.missions.get(id);return {ok:true,json:async()=>({id,conversation_id:body.conversation_id,state:remote.state})};
  });
- await h.rpc({type:'SET_MISSION_CONNECTION',enrollment:'fixture-enrollment-secret'});
+ await h.rpc({type:'SET_MISSION_CONNECTION',endpoint:'https://missions.example.test',enrollment:'fixture-enrollment-secret'});
  await h.rpc({type:'SET_MISSION_MODE',id:CHAT,tabId:10,mode:'mission'});
  return {h,remote};
 }
