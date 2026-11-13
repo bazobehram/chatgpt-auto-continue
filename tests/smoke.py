@@ -1,7 +1,7 @@
 import json, pathlib, subprocess
 root = pathlib.Path(__file__).resolve().parents[1]
 m = json.loads((root/'manifest.json').read_text())
-assert m['manifest_version'] == 3 and m['version'] == '0.7.4'
+assert m['manifest_version'] == 3 and m['version'] == '0.7.5'
 assert m['host_permissions'] == ['https://chatgpt.com/*']
 assert set(m['permissions']) == {'alarms', 'storage', 'tabs'}
 assert m['content_scripts'][0]['matches'] == ['https://chatgpt.com/*']
