@@ -113,7 +113,9 @@ async function dispatch(m,sender){
   if(m.type==='SET_MISSION_CONNECTION'){
     const c=await MissionSignal.connection();
     const endpoint=MissionSignal.normalizeEndpoint(m.endpoint||c.endpoint);
-    const candidate=String(m.enrollment||'').trim()||c.enrollment;
+    const entered=String(m.enrollment||'').trim();
+    if(c.endpoint&&endpoint!==c.endpoint&&!entered)throw Error('Enter the enrollment key for the new server. Saved credentials are never forwarded to another host.');
+    const candidate=entered||c.enrollment;
     if(!candidate)throw Error('Enter an enrollment key.');
     await MissionSignal.verifyEnrollment(candidate,endpoint);
     await MissionSignal.configure(candidate,endpoint);
