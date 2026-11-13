@@ -1,6 +1,0 @@
-tunnel: 8b117f4d-236e-4d51-937c-1c812fe543a5
-credentials-file: /run/secrets/tunnel.json
-ingress:
-  - hostname: mission-signal.synovaq.org
-    service: http://api:8080
-  - service: http_status:404
