@@ -65,7 +65,7 @@ const root=path.resolve(__dirname,'..');
    assert.equal((await status(a)).turns,4);assert.equal((await status(a)).enabled,true);
    await popup.locator('#limitMode').selectOption('unlimited');await wait(async()=>(await status(a)).limitMode==='unlimited','mode saved');
    const generation=(await status(a)).generation;await popup.close();popup=null;await b.page.bringToFront();await a.page.bringToFront();
-   popup=await openPopup(a);assert.equal(await popup.locator('#limitMode').inputValue(),'unlimited');assert.equal((await status(a)).turns,4);assert.equal((await status(a)).generation,generation);
+   popup=await openPopup(a);await wait(async()=>await popup.locator('#limitMode').inputValue()==='unlimited','Unlimited UI restored after popup reopen');assert.equal((await status(a)).turns,4);assert.equal((await status(a)).generation,generation);
   });
   await check('Overview starts/pauses another conversation without focusing or resetting A',async()=>{
    await popup.locator('#tabsPanel summary').click();const row=popup.locator('[data-conversation-id="'+b.id+'"]');
