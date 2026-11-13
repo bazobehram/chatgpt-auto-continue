@@ -33,7 +33,7 @@ const root=path.resolve(__dirname,'..');
    await wait(async()=>await p.locator('#conversation').textContent()===c.title,'correct title');return p;
   };
   await rpc({type:'SET_SETTINGS',settings:{message:'go',settleSeconds:3,maxTurns:2,limitMode:'limited',stallSeconds:60}});
-  const a=await newChat('Disposable QA A'),b=await newChat('GX10 Yetki Doğrulaması');
+  const a=await newChat('Disposable QA A'),b=await newChat('Example Conversation B');
   popup=await openPopup(a);
   await check('Main limit UI defaults Limited; no duplicate limit in Advanced; real title preserved',async()=>{
    assert.equal(await popup.locator('#limitMode').inputValue(),'limited');
@@ -41,7 +41,7 @@ const root=path.resolve(__dirname,'..');
    assert.equal(await popup.locator('#settingsPanel #maxTurns').count(),0);
    assert.equal(await popup.locator('#settingsPanel').getAttribute('open'),null);
    assert.equal(await popup.locator('#limitProgress').textContent(),'0 / 2 continuations');
-   const p=await openPopup(b);assert.equal(await p.locator('#conversation').textContent(),'GX10 Yetki Doğrulaması');await p.close();
+   const p=await openPopup(b);assert.equal(await p.locator('#conversation').textContent(),'Example Conversation B');await p.close();
   });
   await check('Background-tab send with custom message; popup is not the runtime owner',async()=>{
    await rpc({type:'SAVE_MESSAGE',id:a.id,tabId:a.tabId,override:'A message'});await start(a);
@@ -70,13 +70,13 @@ const root=path.resolve(__dirname,'..');
   await check('Overview starts/pauses another conversation without focusing or resetting A',async()=>{
    await popup.locator('#tabsPanel summary').click();const row=popup.locator('[data-conversation-id="'+b.id+'"]');
    await wait(async()=>await row.count()===1,'B row');
-   await row.getByRole('button',{name:'Start GX10 Yetki Doğrulaması',exact:true}).click();
+   await row.getByRole('button',{name:'Start Example Conversation B',exact:true}).click();
    await wait(async()=>(await status(b))?.enabled===true,'B started from overview');assert.equal((await status(a)).turns,4);assert.equal((await status(a)).enabled,true);
    await complete(b);await wait(()=>b.sent.length===1,'B independent default send');await ack(b);
    assert.deepEqual(b.sent,['go']);assert.equal((await status(b)).turns,1);assert.equal((await status(a)).turns,4);
-   const duplicate=await newChat('GX10 duplicate fixture',b.id);
+   const duplicate=await newChat('Duplicate conversation fixture',b.id);
    await wait(async()=>(await row.locator('.small').textContent()).includes('2 tabs'),'duplicate grouping');assert.equal(await popup.locator('[data-conversation-id="'+b.id+'"]').count(),1);assert.deepEqual(duplicate.sent,[]);
-   await row.getByRole('button',{name:'Pause GX10 Yetki Doğrulaması',exact:true}).click();await wait(async()=>(await status(b)).enabled===false,'B paused');
+   await row.getByRole('button',{name:'Pause Example Conversation B',exact:true}).click();await wait(async()=>(await status(b)).enabled===false,'B paused');
    assert.equal((await status(a)).enabled,true);assert.equal((await status(a)).turns,4);await duplicate.page.close();
   });
   await check('Long-running background tool remains active beyond stall timeout without stale warning',async()=>{
