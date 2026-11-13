@@ -1,3 +1,14 @@
+## v0.7.5 — Public source release preparation
+
+- Rewrote the README as a beginner-friendly installation and usage guide.
+- Added contribution and vulnerability-reporting guidance.
+- Removed the author's fixed Mission Signal URL and Chrome extension ID from distributed configuration; optional self-hosted endpoints now require an explicit HTTPS host permission.
+- Prevented silently reusing a stored enrollment key when changing server origins.
+- Documented the optional server's requirements and published example environment/tunnel configuration.
+- Removed machine-specific test outputs and deployment records from the tracked working tree.
+- Local Only remains the recommended mode and needs no additional service.
+- **Upgrading from v0.7.4:** reauthorize your saved Mission Signal server URL in Connection settings; the previous fixed host permission is no longer bundled.
+
 ## v0.7.4 — Preserve human-attention state across Resume
 
 - Mission Signal **Resume** and ordinary **Start** now refuse unresolved human-review and uncertain-send states instead of creating a fresh monitoring session that silently loses recovery data.

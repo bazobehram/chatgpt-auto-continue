@@ -1,7 +1,15 @@
 'use strict';
 // Runs only in the extension worker. Capabilities never enter a ChatGPT message.
 globalThis.MissionSignal=(()=>{
-  const ENDPOINT='https://mission-signal.synovaq.org';
+  const ENDPOINT=null; // No public/shared server is supplied by this project.
+  function normalizeEndpoint(value){
+    const input=String(value||'').trim();
+    if(!input)throw Error('Enter your own Mission Signal HTTPS server URL.');
+    let url;try{url=new URL(input);}catch{throw Error('Enter a valid HTTPS server URL.');}
+    if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)
+      throw Error('Use a bare HTTPS origin, such as https://missions.example.org (no path or credentials).');
+    return url.origin;
+  }
   const key=id=>'mission:'+id;
   const get=async id=>(await chrome.storage.local.get(key(id)))[key(id)]||{mode:'local'};
   const historyKey=id=>'mission-history:'+id;
@@ -16,11 +24,11 @@ globalThis.MissionSignal=(()=>{
       }
     }
   };
-  const connection=async()=>(await chrome.storage.local.get('missionConnection')).missionConnection||{endpoint:ENDPOINT};
+  const connection=async()=>(await chrome.storage.local.get('missionConnection')).missionConnection||{endpoint:null};
   const summary=m=>({mode:m.mode||'local',id:m.id||null,state:m.state||null,connection:m.connection||'unconfigured',offlineAttempts:m.offlineAttempts||0,instructionState:m.instruction?.state||null,lastChecked:m.lastChecked||0});
-  async function request(path,token,method='GET',body){
-    const c=await connection();if(c.endpoint!==ENDPOINT)throw Error('Unsupported Mission Signal endpoint');
-    const response=await fetch(ENDPOINT+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000),redirect:'error',cache:'no-store',credentials:'omit'});
+  async function request(path,token,method='GET',body,endpointOverride){
+    const c=await connection();const endpoint=normalizeEndpoint(endpointOverride||c.endpoint);
+    const response=await fetch(endpoint+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000),redirect:'error',cache:'no-store',credentials:'omit'});
     if(!response.ok){
       if(response.status===401)throw Error('Enrollment key rejected by homeserver (HTTP 401).');
       if(response.status===403)throw Error('Extension origin rejected by homeserver (HTTP 403).');
@@ -46,7 +54,7 @@ globalThis.MissionSignal=(()=>{
       await put(id,m);
     }
     if(!m.registered){
-      const c=await connection();if(!c.enrollment)throw Error('Configure Mission Signal before starting a mission.');
+      const c=await connection();if(!c.enrollment||!c.endpoint)throw Error('Configure your own Mission Signal HTTPS server before starting a mission.');
       try{const r=await request('/v1/missions',c.enrollment,'POST',{id:m.id,conversation_id:id,read_token:m.readToken});verify(m,r,id);m={...m,registered:true,state:r.state,connection:'connected',lastChecked:Date.now()};await put(id,m);}
       catch(e){throw Error('Mission registration failed: '+String(e.message||e)+'. Nothing sent.');}
     }
@@ -91,13 +99,13 @@ globalThis.MissionSignal=(()=>{
     await put(id,next);return next;
   }
   async function setMode(id,mode){if(!['local','mission'].includes(mode))throw Error('Choose Local Only or Mission Signal.');const m=await get(id);if(m.mode==='mission'&&mode==='local'&&m.registered&&m.state==='ACTIVE')throw Error('Cancel the active mission before switching to Local Only.');await put(id,{...m,mode});}
-  async function verifyEnrollment(enrollment){
+  async function verifyEnrollment(enrollment,endpoint){
     const candidate=String(enrollment||'').trim();
     if(!candidate)throw Error('Enter the enrollment key before saving.');
-    const r=await request('/v1/enrollment/verify',candidate,'POST');
+    const r=await request('/v1/enrollment/verify',candidate,'POST',undefined,endpoint);
     if(r?.configured!==true)throw Error('Enrollment verification failed.');
     return true;
   }
-  async function configure(enrollment){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:ENDPOINT,enrollment:String(enrollment||c.enrollment||'').trim()}});}
-  return {get,put,getHistory,verifyEnrollment,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,ENDPOINT};
+  async function configure(enrollment,endpoint){const c=await connection();await chrome.storage.local.set({missionConnection:{endpoint:normalizeEndpoint(endpoint||c.endpoint),enrollment:String(enrollment||c.enrollment||'').trim()}});}
+  return {get,put,getHistory,verifyEnrollment,summary,connection,synchronize,ensure,instruction,claimInstruction,acknowledgeInstruction,releaseUnsentInstruction,beforeContinuation,cancel,setMode,configure,normalizeEndpoint,ENDPOINT};
 })();

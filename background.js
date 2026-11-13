@@ -3,7 +3,7 @@ importScripts('mission.js');
 
 // All message-driven mutations to an individual conversation go through this queue.
 // A journaled SEND_CLAIM is never replayed following an ambiguous failure.
-const VERSION = '0.7.4';
+const VERSION = '0.7.5';
 const DEFAULTS = Object.freeze({message:'go', settleSeconds:6, stallSeconds:180, maxTurns:2, limitMode:'limited', watchdogSeconds:30, autoReload:false});
 const ALARM = 'auto-continue-watchdog';
 const LOCKS = new Map();
@@ -112,10 +112,13 @@ async function dispatch(m,sender){
   if(m.type==='GET_MISSION_CONNECTION'){const c=await MissionSignal.connection();return {ok:true,endpoint:c.endpoint,configured:Boolean(c.enrollment)};}
   if(m.type==='SET_MISSION_CONNECTION'){
     const c=await MissionSignal.connection();
-    const candidate=String(m.enrollment||'').trim()||c.enrollment;
+    const endpoint=MissionSignal.normalizeEndpoint(m.endpoint||c.endpoint);
+    const entered=String(m.enrollment||'').trim();
+    if(c.endpoint&&endpoint!==c.endpoint&&!entered)throw Error('Enter the enrollment key for the new server. Saved credentials are never forwarded to another host.');
+    const candidate=entered||c.enrollment;
     if(!candidate)throw Error('Enter an enrollment key.');
-    await MissionSignal.verifyEnrollment(candidate);
-    if(String(m.enrollment||'').trim())await MissionSignal.configure(candidate);
+    await MissionSignal.verifyEnrollment(candidate,endpoint);
+    await MissionSignal.configure(candidate,endpoint);
     return {ok:true,verified:true};
   }
   if(m.type==='CANCEL_MISSION'){

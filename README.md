@@ -1,88 +1,104 @@
-# ChatGPT Auto-Continue v0.6.0
+# ChatGPT Auto-Continue 🐙
 
-Manifest V3 Chrome extension using your existing ChatGPT login, with an optional independent Mission Signal service on your homeserver. Local Only works without that service. No telemetry or remotely loaded extension code.
+Keep a ChatGPT conversation moving when a response finishes—without repeatedly typing “go” or “continue”.
 
-## Existing installation
+**Free and open source · GPL-3.0 · Chrome/Chromium extension · v0.7.5**
 
-Keep the current unpacked source directory and extension ID. Update files here, then click Reload on the existing entry in chrome://extensions. Refresh disposable test tabs to load the content script. No ZIP or second installation is required.
+> Community project. Not made, supported, or endorsed by OpenAI. You use your own ChatGPT account, and ChatGPT limits still apply.
 
-## Use
+## What does it do?
 
-**Mission Signal:** Selecting Mission Signal hides the Local Only limit controls and enables completion-driven continuation by default. An optional, separately saved numeric safety cap is in Advanced settings and must be enabled explicitly. Switching modes preserves both numeric preferences independently. If the service disconnects, at most five offline continuation attempts are allowed; the controller then pauses. The server's completed state is authoritative.
+Auto-Continue watches a saved ChatGPT conversation and sends your chosen follow-up message when an eligible assistant reply finishes. For example, if ChatGPT is working through a long coding task, you can set the message to **“Continue with the next step”**.
 
-**History and recovery:** The collapsed History section retains terminal Mission IDs, Local Only completion events, and important stop/error reasons. These records survive Start, New Mission, refresh, mode changes, and worker restarts. An old completed/cancelled Mission ID is never reused automatically.
+It is not an autonomous agent, a bypass for ChatGPT limits, or a guarantee that work finishes correctly. **Review important actions yourself.**
 
-**Mission lifecycle:** Start registers the mission and sends one setup instruction. If it was manually sent after a UI failure, the controller reconciles the exact instruction from the conversation instead of repeating it. Resume reactivates a confirmed mission while retaining count and journal. Cancel mission requests authenticated cancellation from the homeserver; a network failure never claims success. New mission is allowed only after the preceding mission is completed or cancelled. The popup shows Completed or Cancelled and disables Start for those terminal states. Cancelling is irreversible for that Mission ID. Avoid resetting a mission when an old unsent draft remains in the composer.
+### Features
 
-**Human-attention recovery:** When the latest assistant reply requests a human action, automation stops. **Resume Mission only observes new activity; it never resends the existing reply.** While human review or an uncertain send remains unresolved, Resume and Start cannot discard that state. The popup directs you to resolve the warning explicitly. If the action was completed, select **Continue after review** and confirm; no separate Start is needed. If the warning was incorrect or belongs to an old run, select **Dismiss approval warning** (no message is sent), then Start normally. A new Mission clears previous review flags while preserving history. Uncertain message submissions cannot use this review override; inspect the transcript instead.\n\n**Deployment compatibility:** The Cancel control requires Mission Signal service v0.2.0 with the authenticated `/cancel` route. Updating the extension alone is insufficient; deploy the independent service before enabling this version in real Chrome.
+- **Per-conversation controls:** Run one chat while others remain paused. Different chats can use different messages and limits.
+- **Local Only (recommended):** No extra server, enrollment key, or account is required.
+- **Custom follow-up:** Set one message for a chat or use your global default.
+- **Limited or unlimited counter:** Limit the number of follow-up attempts or disable only the numeric cap.
+- **Safety first:** Pauses for human approvals, uncertain sends, unfinished drafts, failures, navigation, and other situations that need attention. It avoids blindly retrying ambiguous submissions.
+- **Recovery:** View status, inspect privacy-conscious diagnostics, dismiss outdated approval warnings, or explicitly continue after reviewing the situation.
+- **Optional Mission Signal:** Advanced users can self-host a separate completion service. This is **not required** for ordinary use.
 
+## Install (unpacked extension)
 
-Open a saved ChatGPT conversation, including project conversations. Start acknowledges the current reply and waits for a new completed reply. Send once, available after Start, requests the first continuation for an existing finished reply; subsequent eligible replies continue automatically until paused or the limit is reached.
+1. Download the [latest source code](https://github.com/bazobehram/chatgpt-auto-continue) using **Code → Download ZIP**, or clone this repository.
+2. Extract the ZIP into a permanent folder. You should see `manifest.json` in that folder.
+3. Open `chrome://extensions` (Chromium-based browsers with compatible extension support).
+4. Enable **Developer mode**.
+5. Select **Load unpacked** and choose the folder containing `manifest.json`.
+6. Open a **saved ChatGPT conversation** at `https://chatgpt.com/c/...`, then open the Auto-Continue extension.
 
-One editor switches between This chat and Global default. Changes save on leaving the field; saved and unsaved status is explicit. Use global default clears the chat override. Advanced settings and the other-tab overview are collapsed initially.
+No Node.js, Python, CommandCore, Docker, or Mission Signal service is needed to run **Local Only**.
 
-Defaults: go; settle delay 6 seconds; watchdog 30 seconds; stall timeout 180 seconds; maximum attempts 2; refresh recovery off. Counts include journaled attempts, including uncertain outcomes.
+### Your first continuation
 
-Pause disables automation. Refresh, navigation away, owner closure, browser startup, an uncertain submission, a composer draft, detected errors/approval/completion, or the limit pauses safely. Review before starting again. Explicitly starting a paused Local Only session creates a fresh baseline and resets its attempt count. Resuming the same mission preserves its count and journal.
+1. Keep **Local Only** selected.
+2. Enter a message, such as `Continue with the next step.`
+3. Leave the default limit at **2** for your first test.
+4. Click **Start** to watch for a **new completed reply**.
+5. To continue the reply that was already finished when you pressed Start, click **Send once** while it is available.
+6. The extension continues subsequent eligible replies until it pauses or reaches your limit. Use **Pause** to stop.
 
-## Safety
+**Why doesn't Start immediately send?** It starts monitoring from the current conversation baseline to avoid duplicating old messages. **Send once** is the explicit option for an existing finished reply.
 
-background.js serializes conversation mutations and persists owner tab, activation generation, baseline, last handled response, claim token, attempts and recovery state. Only the owner can claim or confirm a send. A claim is durable before DOM interaction. Cancellation and activation are checked before the final click. Old activations cannot pause newer activations.
+**How does Resume work?** Resume Mission resumes observing; it does not automatically resend the previously handled reply. After a human-approval warning, use **Continue after review** only after handling the requested action, or **Dismiss approval warning** when the warning was false or outdated. Neither button grants an external approval.
 
-content.js observes message structure, final-turn evidence, generation controls and busy/tool indicators. Settling is an extra delay, not completion evidence by itself. Current ChatGPT and legacy markup are supported. Unknown controls fail closed. A document guard prevents duplicate installation; storage events and chrome.alarms wake the controller without a permanent worker.
+## Optional: self-hosted Mission Signal
 
-Worker restart retains journals and ownership. Browser startup pauses enabled sessions. Optional recovery permits one bounded refresh followed by manual review; uncertain messages are never automatically retried. Refresh always pauses rather than replaying messages.
+Mission Signal is a separate API designed for users who want an external completion condition rather than just a continuation count. **It is advanced and optional.** This project does not provide a shared public server or an enrollment key. Users must deploy and administer their own server.
 
-popup.js listens to live storage updates. Non-owner tabs clearly identify the running owner and cannot start, send or change its message. Settings use schema version 2 with normalization and migration.
+See [Mission Signal deployment](mission-signal/DEPLOYMENT.md) for setup. Then, in the extension's **Mission Signal connection** panel, enter **your own HTTPS server origin**, such as `https://missions.example.org`, and your own enrollment key. Chrome asks for access to **that specific server**; it is not an automatic connection to the developer's server.
 
-Permissions: storage, alarms, tabs, and host access to https://chatgpt.com/* and the dedicated https://mission-signal.synovaq.org/* API. Content scripts run only on ChatGPT.
+Changing a server requires entering its enrollment key again; saved credentials are not sent to another host. Existing private installations retain their stored server URL, although upgrading may require granting host permission again.
 
-## Tests
+**Important:** The default Mission Signal completion instruction assumes you have the separate CommandCore integration and an appropriately named `homeserver` with the Mission Signal CLI. Without that integration, use Local Only. Mission Signal is not currently a general-purpose standalone task-completion system for arbitrary AI agents.
 
-Run all seven suites before installing; the GitHub Actions workflow on the feature branch checks the same acceptance runner. Existing production Chrome requires a separate, user-authorized live smoke test. Do not interpret isolated browser fixture success as a real authenticated Chrome result.
+## Privacy and permissions
 
+- The extension runs against ChatGPT conversations in your existing browser session.
+- There is **no extension telemetry or analytics service** and no remotely loaded extension code.
+- Chat continuation messages and session information remain in Chrome's local extension storage and the ChatGPT conversation itself.
+- **Local Only** does not contact a Mission Signal server.
+- The extension has `storage`, `alarms` and `tabs` permissions, plus ChatGPT host access.
+- Optional Mission Signal access is requested only when you explicitly configure an HTTPS server. The broad *optional permission pattern* allows you to choose your own host; Chrome asks for permission to the specific origin.
+- If you use Mission Signal, that self-hosted service receives the mission registration, identifiers, and authenticated status requests. Do not reuse secrets from other services.
 
-- npm test: Node controller/content tests.
-- python tests/smoke.py: manifest, permissions, files and JavaScript syntax.
-- npm run test:all: all suites, with logs in tests/full-test-results.json.
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and [CONTRIBUTING.md](CONTRIBUTING.md) for contributing.
 
-Playwright suites use disposable Chromium profiles with the real extension. All ChatGPT requests are intercepted with local deterministic fixtures; no authenticated account is contacted. The acceptance suite uses real runtime messages, persistent storage, the popup, and an actual service-worker stop/restart through CDP.
+## Safety and limitations
 
-Browser tests require Playwright and Chromium. QA_CHROMIUM selects an existing Chromium executable; QA_PYTHON selects Python. NODE_PATH may point to bundled Playwright. Nothing is installed into the user's normal Chrome profile.
+This extension interacts with a website UI that can change without notice. It may miss a completed answer, pause too soon, or need a manual restart after navigation or refresh. It is deliberately conservative: **a detected approval, ambiguous send, active generation, or draft should not be silently bypassed**.
 
-See TEST_REPORT.md for the distinction between isolated results and live authenticated Chrome checks.
+“Unlimited” only removes the numeric follow-up cap; it does **not** remove safety stops, usage limits, or ChatGPT policies. The extension cannot prove transactional exactly-once delivery through a browser interface. Some tests use simulated ChatGPT pages rather than an authenticated browser session.
 
-## Limits
+Do not rely on automatic continuation for irreversible operations, financial transfers, privileged access, or tasks that need manual approval. Verify outputs before using or executing them.
 
-The controller enforces at most one attempt per eligible reply within an activation, not transactional exactly-once delivery through a browser UI. Explicitly starting again or manually sending can initiate another attempt by user choice.
+## Update
 
-Roadmap/approval detection uses conservative English patterns and cannot understand arbitrary workflows perfectly. ChatGPT markup, localization, virtualized transcripts, tool output and network behavior can change. Unknown DOM or errors may require manual review. Some historical replies in the tested account fail to render after refresh; the controller pauses on that error.
+Pull the latest changes (or download and extract the updated ZIP into your existing source folder). In `chrome://extensions`, click **Reload** on the same extension, then refresh ChatGPT tabs. If you use a self-hosted server, review its permissions and configuration after upgrading.
 
-A partial live acceptance run is not full production verification.
+## Development and tests
 
-## v0.6.0 conversation limits and runtime status
+Requires Node.js, Python, and Playwright/Chromium for the full browser suites:
 
-Continuation limit is in the main view. Limited takes a positive whole number; Unlimited removes the count cap while retaining all submission, ownership, authentication, approval and recovery safeguards. Each conversation saves its own mode and numeric value. Changing the mode or limit preserves the counter and journal; explicitly starting a paused Local Only session establishes a new baseline and resets that session count. Resuming the same registered mission preserves its continuation count and journal; an exhausted Limited mission requires a raised limit or an explicit new mission.
+```bash
+npm install
+npm test
+npm run test:all
+```
 
-Other ChatGPT tabs groups duplicate tabs into one logical conversation. Its title focuses the corresponding tab; separate Start/Pause buttons manage its controller without changing the active tab. Real titles are preserved, including GX10 Yetki Doğrulaması. The popup probes the owner controller before claiming it is Running. A saved enabled flag with no responding controller is shown as Needs attention.
+API tests: `python -m pytest mission-signal/tests -q`. The full test runner executes additional checks and may require Playwright's Chromium install. These are QA fixtures; no live ChatGPT account is needed for automated browser tests.
 
-Switching focus and closing the popup do not pause or reset a conversation. Known generation or tool controls remain evidence of ongoing work even when no text changes or background timers are throttled. Stall timeout applies when a submitted continuation has no identifiable reply and no busy evidence. The controller cannot reliably distinguish an indefinitely stuck spinner from a legitimate long tool call; it never uses that ambiguity as permission to send or refresh during known work.
+## Contribute ❤️
 
-Completion requires a durable message identity and actual response body, not temporary fallback IDs or a speaker heading. Send acknowledgment waits for matching transcript text for up to ten seconds, without clicking again. The optional recovery refresh is bounded and always pauses for review.
+Bug reports, accessibility improvements, safer recovery flows, translations, documentation fixes, and patches are welcome. Please open an issue describing the behavior and reproduction steps (without credentials or private conversations), or submit a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-npm run test:limits covers Unlimited, main-view limits, background operation, delayed acknowledgment, a tool indicator held beyond the stall timeout, grouped row controls, and a debugger-paused controller. The full test runner records all seven suites in tests/full-test-results.json.
+## License
 
+[GNU General Public License v3.0](LICENSE) (GPL-3.0). You may use, study, share, and modify this free software under the license's terms.
 
-## Mission Signal v0.1.0
-
-The independent FastAPI/SQLite service runs on Ubuntu homeserver in /opt/mission-signal. Its Compose project is mission-signal, with API loopback18865 and a separate Cloudflare tunnel for https://mission-signal.synovaq.org. No CommandCore source, tool, OAuth setting or production container is changed.
-
-Local Only is the explicit default and never depends on the server. Choose Mission Signal while paused, then Start. The worker persists a generated mission ID/read capability before idempotent registration. Once the composer is idle and safe, it sends one instruction and verifies the matching user transcript. That instruction does not count as a continuation. Claimed or ambiguous instructions are never blindly retried after refresh or restart. A confirmed instruction is not sent again on resume. New mission replaces a reviewed prior mission only while paused.
-
-Mission mode uses the remote state as completion authority, retaining local approval/authentication/draft/usage safeguards. The worker polls every watchdog interval and the content controller checks during observation. Every continuation claim forces a fresh remote check. A response must match both the mission and conversation ID.
-
-On connection loss the popup shows Recovery and Disconnected X/5. Each claimed offline continuation consumes one persisted grace attempt before any DOM click. The fifth acknowledgment pauses the controller. Limited mode may stop earlier; Unlimited still stops at five offline attempts. Counts survive refresh, owner closure, browser restart and manual Pause/Start. A successful remote status synchronization resets the grace counter. If remote completion occurred while offline, reconnection stops that conversation before another continuation.
-
-The service stores hashed read/completion capabilities separately. Chrome has no completion key. The private completion capability is available to the existing authorized homeserver OS identity through `mission-signal complete <MISSION_ID>`. A Mission ID alone or the read token cannot complete a mission. Secrets never belong in ChatGPT prompts. The enrollment key is configured in the popup connection password field and is not returned by STATUS or included in mission instructions.
-
-See mission-signal/DEPLOYMENT.md and TEST_REPORT.md for deployment and acceptance scope. Historical v0.4.2 evidence is retained in TEST_REPORT-v0.4.2.md.
+---
+*Auto-Continue is a community browser extension, not an official OpenAI product.*

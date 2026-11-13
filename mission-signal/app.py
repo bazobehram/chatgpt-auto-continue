@@ -1,4 +1,4 @@
-"""Mission Signal 0.1.0: no CommandCore dependencies or credentials."""
+"""Mission Signal 0.2.0: no CommandCore dependencies or embedded credentials."""
 import hashlib
 import hmac
 import json
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 DATA = Path(os.environ.get('MISSION_DATA', '/data'))
 KEY_FILE = Path(os.environ.get('MISSION_ENROLLMENT_FILE', '/run/secrets/enrollment'))
-EXTENSION_ORIGIN = os.environ.get('MISSION_EXTENSION_ORIGIN', 'chrome-extension://nieinjacjejclbomhndjaabjnpjnbapf')
+EXTENSION_ORIGIN = os.environ.get('MISSION_EXTENSION_ORIGIN', '')
 
 
 def digest(value):
