@@ -4,13 +4,13 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
 const root=path.resolve(__dirname,'..');
 (async()=>{
  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'autocontinue-mission-'));
- const context=await chromium.launchPersistentContext(profile,{channel:'chromium',executablePath:process.env.QA_CHROMIUM||undefined,headless:true,args:['--disable-extensions-except='+root,'--load-extension='+root]});
+ const context=await chromium.launchPersistentContext(profile,{channel:'chromium',executablePath:process.env.QA_CHROMIUM||undefined,headless:true,args:['--disable-extensions-except='+root,'--load-extension='+root,'--auto-confirm-for-tests']});
  const results=[],chats=[],missions=new Map();let control,online=true,serial=0,requests=0;
  const wait=async(fn,label,ms=25000)=>{const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+label);};
  const check=async(name,fn)=>{try{await fn();results.push({name,status:'PASS'});console.log('PASS '+name);}catch(e){results.push({name,status:'FAIL',error:e.stack});throw e;}};
  try{
   await context.route('https://chatgpt.com/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(__dirname,'mock_chat.html'),'utf8')}));
-  await context.route('https://mission-signal.synovaq.org/**',async route=>{
+  await context.route('https://missions.example.test/**',async route=>{
    requests++;if(!online)return route.abort('connectionfailed');const req=route.request();let result;
    if(req.method()==='POST'&&req.url().endsWith('/enrollment/verify')){
      result={configured:true};
@@ -36,7 +36,7 @@ const root=path.resolve(__dirname,'..');
   const start=async c=>{assert.equal((await rpc({type:'SET_SESSION',id:c.id,tabId:c.tabId,enabled:true})).ok,true);await tick(c);};
   const reply=async(c,text='Next work remains.')=>{await c.page.evaluate(text=>{mock.setBusy(false);mock.assistant(text,false);},text);await tick(c);};
   const instruction=async c=>{await start(c);await wait(async()=>(await sent(c)).length===1,'one instruction');await wait(async()=>(await status(c)).mission.instructionState==='sent','acknowledged instruction');};
-  await rpc({type:'SET_SETTINGS',settings:{settleSeconds:3,maxTurns:20}});await rpc({type:'SET_MISSION_CONNECTION',enrollment:'fixture-secret-only'});
+  await rpc({type:'SET_SETTINGS',settings:{settleSeconds:3,maxTurns:20}});await rpc({type:'SET_MISSION_CONNECTION',endpoint:'https://missions.example.test',enrollment:'fixture-secret-only'});
   const a=await newChat();
   await check('Registration and one automatically acknowledged instruction; no secrets in chat',async()=>{
    await instruction(a);const text=(await sent(a))[0],s=await status(a);assert.match(text,/mission-signal complete/);assert.ok(!text.includes('fixture-secret-only'));assert.equal(s.session.turns,0);assert.equal(missions.size,1);
